@@ -17,11 +17,13 @@
 .idea/
 out/
 
-# Maven
-target/
+# Gradle
+/build
+/.gradle
 
 # Package Files #
 *.jar
+!gradle-wrapper.jar
 *.war
 *.nar
 *.ear
