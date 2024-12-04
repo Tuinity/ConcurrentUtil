@@ -122,7 +122,7 @@ public class SWMRHashTable<K, V> implements Map<K, V>, Iterable<Map.Entry<K, V>>
     /**
      * Constructs this map with the specified capacity and load factor.
      * @param capacity specified capacity, > 0
-     * @param loadFactor specified load factor, > 0 && finite
+     * @param loadFactor specified load factor, {@code > 0 && finite}
      */
     public SWMRHashTable(final int capacity, final float loadFactor) {
         final int tableSize = getCapacityFor(capacity);
@@ -170,7 +170,7 @@ public class SWMRHashTable<K, V> implements Map<K, V>, Iterable<Map.Entry<K, V>>
      * with the specified load factor.
      * All of the specified map's entries are copied into this map.
      * @param capacity specified capacity, > 0
-     * @param loadFactor specified load factor, > 0 && finite
+     * @param loadFactor specified load factor, {@code > 0 && finite}
      * @param other The specified map.
      */
     public SWMRHashTable(final int capacity, final float loadFactor, final Map<K, V> other) {

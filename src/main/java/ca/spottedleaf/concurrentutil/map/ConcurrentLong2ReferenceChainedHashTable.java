@@ -23,13 +23,13 @@ import java.util.function.Predicate;
  * Concurrent hashtable implementation supporting mapping arbitrary {@code long} values onto non-null {@code Object}
  * values with support for multiple writer and multiple reader threads.
  *
- * <p><h3>Happens-before relationship</h3></p>
+ * <h2>Happens-before relationship</h2>
  * <p>
  * As with {@link java.util.concurrent.ConcurrentMap}, there is a happens-before relationship between actions in one thread
  * prior to writing to the map and access to the results of those actions in another thread.
  * </p>
  *
- * <p><h3>Atomicity of functional methods</h3></p>
+ * <h2>Atomicity of functional methods</h2>
  * <p>
  * Functional methods are functions declared in this class which possibly perform a write (remove, replace, or modify)
  * to an entry in this map as a result of invoking a function on an input parameter. For example, {@link #compute(long, BiLong1Function)},
