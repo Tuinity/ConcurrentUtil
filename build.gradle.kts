@@ -9,8 +9,8 @@ repositories {
 }
 
 dependencies {
-    compileOnly(libs.org.slf4j.slf4j.api)
-    compileOnly(libs.it.unimi.dsi.fastutil)
+    implementation(libs.org.slf4j.slf4j.api)
+    implementation(libs.it.unimi.dsi.fastutil)
 }
 
 tasks.jar {
