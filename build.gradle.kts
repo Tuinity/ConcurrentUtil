@@ -36,4 +36,5 @@ indra {
             }
         }
     }
+    signWithKeyFromProperties("signingKey", "signingPassword")
 }
