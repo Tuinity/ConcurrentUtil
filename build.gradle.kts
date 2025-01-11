@@ -23,8 +23,8 @@ indra {
     javaVersions {
         target(21)
     }
-    publishSnapshotsTo("paperSnapshots", "https://papermc.io/repo/repository/maven-snapshots/")
-    publishReleasesTo("paperReleases", "https://papermc.io/repo/repository/maven-releases/")
+    publishSnapshotsTo("paperSnapshots", "https://repo.papermc.io/repository/maven-snapshots/")
+    publishReleasesTo("paperReleases", "https://repo.papermc.io/repository/maven-releases/")
     gpl3OnlyLicense()
     github("Tuinity", "ConcurrentUtil")
     configurePublications {
