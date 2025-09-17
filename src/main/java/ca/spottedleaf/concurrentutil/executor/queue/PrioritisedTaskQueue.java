@@ -13,14 +13,32 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PrioritisedTaskQueue implements PrioritisedExecutor {
 
     /**
+     * Whether to order tasks by (lower) stream id after (higher) priority
+     */
+    public static final long FLAG_ORDER_BY_STREAM = 1L << 0;
+
+    /**
      * Required for tie-breaking in the queue
      */
     private final AtomicLong taskIdGenerator = new AtomicLong();
     private final AtomicLong scheduledTasks = new AtomicLong();
     private final AtomicLong executedTasks = new AtomicLong();
-    private final AtomicLong subOrderGenerator = new AtomicLong();
+    private final AtomicLong subOrderGenerator;
     private final AtomicBoolean shutdown = new AtomicBoolean();
-    private final ConcurrentSkipListMap<PrioritisedQueuedTask.Holder, Boolean> tasks = new ConcurrentSkipListMap<>(PrioritisedQueuedTask.COMPARATOR);
+    private final ConcurrentSkipListMap<PrioritisedQueuedTask.Holder, Boolean> tasks;
+
+    public PrioritisedTaskQueue() {
+        this(new AtomicLong());
+    }
+
+    public PrioritisedTaskQueue(final AtomicLong subOrderGenerator) {
+        this(subOrderGenerator, 0L);
+    }
+
+    public PrioritisedTaskQueue(final AtomicLong subOrderGenerator, final long flags) {
+        this.subOrderGenerator = subOrderGenerator;
+        this.tasks = new ConcurrentSkipListMap<>(((flags & FLAG_ORDER_BY_STREAM) != 0L) ? PrioritisedQueuedTask.COMPARATOR_STREAM : PrioritisedQueuedTask.COMPARATOR);
+    }
 
     @Override
     public long getTotalTasksScheduled() {
@@ -39,7 +57,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
 
     @Override
     public boolean shutdown() {
-        return !this.shutdown.getAndSet(true);
+        return this.shutdown.compareAndSet(false, true);
     }
 
     @Override
@@ -64,7 +82,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
         return executedTasks == scheduledTasks;
     }
 
-    public PrioritySubOrderPair getHighestPrioritySubOrder() {
+    public PriorityState getHighestPriorityState() {
         final Map.Entry<PrioritisedQueuedTask.Holder, Boolean> firstEntry = this.tasks.firstEntry();
         if (firstEntry == null) {
             return null;
@@ -72,7 +90,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
 
         final PrioritisedQueuedTask.Holder holder = firstEntry.getKey();
 
-        return new PrioritySubOrderPair(Priority.getPriority(holder.priority), holder.subOrder);
+        return new PriorityState(Priority.getPriority(holder.priority), holder.subOrder, holder.stream);
     }
 
     public Runnable pollTask() {
@@ -110,32 +128,46 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
 
     @Override
     public PrioritisedTask createTask(final Runnable task) {
-        return this.createTask(task, Priority.NORMAL, this.generateNextSubOrder());
+        return this.createTask(task, Priority.NORMAL);
     }
 
     @Override
     public PrioritisedTask createTask(final Runnable task, final Priority priority) {
-        return this.createTask(task, priority, this.generateNextSubOrder());
+        return this.createTask(task, priority, this.generateNextSubOrder(), 0L);
     }
 
     @Override
-    public PrioritisedTask createTask(final Runnable task, final Priority priority, final long subOrder) {
-        return new PrioritisedQueuedTask(task, priority, subOrder);
+    public PrioritisedTask createTask(final Runnable task, final Priority priority, final long subOrder,
+                                      final long stream) {
+        if (!Priority.isValidPriority(priority)) {
+            throw new IllegalArgumentException("Invalid priority " + priority);
+        }
+
+        return new PrioritisedQueuedTask(task, priority, subOrder, stream, this.taskIdGenerator.getAndIncrement());
     }
 
     @Override
     public PrioritisedTask queueTask(final Runnable task) {
-        return this.queueTask(task, Priority.NORMAL, this.generateNextSubOrder());
+        final PrioritisedTask ret = this.createTask(task);
+
+        ret.queue();
+
+        return ret;
     }
 
     @Override
     public PrioritisedTask queueTask(final Runnable task, final Priority priority) {
-        return this.queueTask(task, priority, this.generateNextSubOrder());
+        final PrioritisedTask ret = this.createTask(task, priority);
+
+        ret.queue();
+
+        return ret;
     }
 
     @Override
-    public PrioritisedTask queueTask(final Runnable task, final Priority priority, final long subOrder) {
-        final PrioritisedQueuedTask ret = new PrioritisedQueuedTask(task, priority, subOrder);
+    public PrioritisedTask queueTask(final Runnable task, final Priority priority, final long subOrder,
+                                     final long stream) {
+        final PrioritisedTask ret = this.createTask(task, priority, subOrder, stream);
 
         ret.queue();
 
@@ -154,23 +186,44 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 return subOrderCompare;
             }
 
-            return Long.compare(t1.id, t2.id);
+            return Long.signum(t1.id - t2.id);
+        };
+
+        public static final Comparator<PrioritisedQueuedTask.Holder> COMPARATOR_STREAM = (final PrioritisedQueuedTask.Holder t1, final PrioritisedQueuedTask.Holder t2) -> {
+            final int priorityCompare = t1.priority - t2.priority;
+            if (priorityCompare != 0) {
+                return priorityCompare;
+            }
+
+            final int streamCompare = Long.compare(t1.stream, t2.stream);
+            if (streamCompare != 0) {
+                return streamCompare;
+            }
+
+            final int subOrderCompare = Long.compare(t1.subOrder, t2.subOrder);
+            if (subOrderCompare != 0) {
+                return subOrderCompare;
+            }
+
+            return Long.signum(t1.id - t2.id);
         };
 
         private static final class Holder {
             private final PrioritisedQueuedTask task;
             private final int priority;
             private final long subOrder;
+            private final long stream;
             private final long id;
 
             private volatile boolean removed;
             private static final VarHandle REMOVED_HANDLE = ConcurrentUtil.getVarHandle(Holder.class, "removed", boolean.class);
 
-            private Holder(final PrioritisedQueuedTask task, final int priority, final long subOrder,
+            private Holder(final PrioritisedQueuedTask task, final int priority, final long subOrder, final long stream,
                            final long id) {
                 this.task = task;
                 this.priority = priority;
                 this.subOrder = subOrder;
+                this.stream = stream;
                 this.id = id;
             }
 
@@ -178,7 +231,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
              * Returns true if marked as removed
              */
             public boolean markRemoved() {
-                return !(boolean)REMOVED_HANDLE.getAndSet((Holder)this, (boolean)true);
+                return false == (boolean)REMOVED_HANDLE.compareAndExchange((Holder)this, (boolean)false, (boolean)true);
             }
         }
 
@@ -187,17 +240,16 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
 
         private Priority priority;
         private long subOrder;
+        private long stream;
         private Holder holder;
 
-        public PrioritisedQueuedTask(final Runnable execute, final Priority priority, final long subOrder) {
-            if (!Priority.isValidPriority(priority)) {
-                throw new IllegalArgumentException("Invalid priority " + priority);
-            }
-
+        public PrioritisedQueuedTask(final Runnable execute, final Priority priority, final long subOrder,
+                                     final long stream, final long id) {
             this.execute = execute;
             this.priority = priority;
             this.subOrder = subOrder;
-            this.id = PrioritisedTaskQueue.this.taskIdGenerator.getAndIncrement();
+            this.stream = stream;
+            this.id = id;
         }
 
         @Override
@@ -216,7 +268,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     throw new IllegalStateException("Queue is shutdown");
                 }
 
-                final Holder holder = new Holder(this, this.priority.priority, this.subOrder, this.id);
+                final Holder holder = new Holder(this, this.priority.priority, this.subOrder, this.stream, this.id);
                 this.holder = holder;
 
                 PrioritisedTaskQueue.this.scheduledTasks.getAndIncrement();
@@ -224,8 +276,9 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
             }
 
             if (PrioritisedTaskQueue.this.isShutdown()) {
-                this.cancel();
-                throw new IllegalStateException("Queue is shutdown");
+                if (this.cancel()) {
+                    throw new IllegalStateException("Queue is shutdown");
+                }
             }
 
 
@@ -307,7 +360,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
@@ -328,7 +381,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
@@ -349,7 +402,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
@@ -360,7 +413,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
         @Override
         public long getSubOrder() {
             synchronized (this) {
-                return this.subOrder;
+                return this.priority == Priority.COMPLETING ? 0L : this.subOrder;
             }
         }
 
@@ -377,7 +430,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
@@ -398,7 +451,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
@@ -419,7 +472,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
@@ -428,27 +481,66 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
         }
 
         @Override
-        public boolean setPriorityAndSubOrder(final Priority priority, final long subOrder) {
+        public long getStream() {
             synchronized (this) {
-                if (this.priority == Priority.COMPLETING || (this.priority == priority && this.subOrder == subOrder)) {
+                return this.priority == Priority.COMPLETING ? 0L : this.stream;
+            }
+        }
+
+        @Override
+        public boolean setStream(final long stream) {
+            synchronized (this) {
+                if (this.priority == Priority.COMPLETING || this.stream == stream) {
                     return false;
                 }
 
-                this.priority = priority;
-                this.subOrder = subOrder;
+                this.stream = stream;
 
                 if (this.holder != null) {
                     if (this.holder.markRemoved()) {
                         PrioritisedTaskQueue.this.tasks.remove(this.holder);
                     }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.id);
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
                     PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
                 }
 
                 return true;
             }
         }
-    }
 
-    public static record PrioritySubOrderPair(Priority priority, long subOrder) {}
+        @Override
+        public boolean setPrioritySubOrderStream(final Priority priority, final long subOrder, final long stream) {
+            synchronized (this) {
+                if (this.priority == Priority.COMPLETING
+                        || (this.priority == priority && this.subOrder == subOrder && this.stream == stream)) {
+                    return false;
+                }
+
+                this.priority = priority;
+                this.subOrder = subOrder;
+                this.stream = stream;
+
+                if (this.holder != null) {
+                    if (this.holder.markRemoved()) {
+                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
+                    }
+                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
+                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
+                }
+
+                return true;
+            }
+        }
+
+        @Override
+        public PriorityState getPriorityState() {
+            synchronized (this) {
+                if (this.priority ==  Priority.COMPLETING) {
+                    return null;
+                }
+
+                return new PriorityState(this.priority, this.subOrder, this.stream);
+            }
+        }
+    }
 }

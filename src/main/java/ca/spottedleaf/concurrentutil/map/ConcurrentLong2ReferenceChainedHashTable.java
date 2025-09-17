@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.PrimitiveIterator;
 import java.util.Set;
-import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -53,7 +53,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     protected static final float DEFAULT_LOAD_FACTOR = 0.75f;
     protected static final int MAXIMUM_CAPACITY = Integer.MIN_VALUE >>> 1;
 
-    protected final LongAdder size = new LongAdder();
+    protected final AtomicLong size = new AtomicLong();
     protected final float loadFactor;
 
     protected volatile TableEntry<V>[] table;
@@ -96,7 +96,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
     protected static int getTargetThreshold(final int capacity, final float loadFactor) {
         final double ret = (double)capacity * (double)loadFactor;
-        if (Double.isInfinite(ret) || ret >= ((double)Integer.MAX_VALUE)) {
+        if (Double.isInfinite(ret) || ret >= ((double)Integer.MAX_VALUE - 1)) {
             return THRESHOLD_NO_RESIZE;
         }
 
@@ -144,9 +144,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     }
 
     public static <V> ConcurrentLong2ReferenceChainedHashTable<V> createWithExpected(final int expected, final float loadFactor) {
-        final int capacity = (int)Math.ceil((double)expected / (double)loadFactor);
+        double capacity = Math.ceil((double)expected / (double)loadFactor);
+        if (!Double.isFinite(capacity)) {
+            throw new IllegalArgumentException("Invalid load factor");
+        }
+        if (capacity > (double)Integer.MAX_VALUE) {
+            capacity = (double)Integer.MAX_VALUE;
+        }
 
-        return createWithCapacity(capacity, loadFactor);
+        return createWithCapacity((int)capacity, loadFactor);
     }
 
     /** must be deterministic given a key */
@@ -280,7 +286,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * Returns the number of mappings in this map.
      */
     public int size() {
-        final long ret = this.size.sum();
+        final long ret = this.size.get();
 
         if (ret < 0L) {
             return 0;
@@ -296,14 +302,14 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * Returns whether this map has no mappings.
      */
     public boolean isEmpty() {
-        return this.size.sum() <= 0L;
+        return this.size.get() <= 0L;
     }
 
     /**
      * Adds count to size and checks threshold for resizing
      */
     protected final void addSize(final long count) {
-        this.size.add(count);
+        final long sum = this.size.addAndGet(count);
 
         final int threshold = this.getThresholdAcquire();
 
@@ -311,8 +317,6 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
             // resizing or no resizing allowed, in either cases we do not need to do anything
             return;
         }
-
-        final long sum = this.size.sum();
 
         if (sum < (long)threshold) {
             return;
@@ -342,9 +346,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         } else {
             capacity = (int)Math.ceil(targetD);
             capacity = IntegerUtil.roundCeilLog2(capacity);
-            if (capacity > MAXIMUM_CAPACITY) {
-                capacity = MAXIMUM_CAPACITY;
-            }
+            capacity = Math.min(capacity, MAXIMUM_CAPACITY);
         }
 
         // create new table data
@@ -456,7 +458,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * Subtracts count from size
      */
     protected final void subSize(final long count) {
-        this.size.add(-count);
+        this.size.getAndAdd(-count);
     }
 
     /**

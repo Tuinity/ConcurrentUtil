@@ -10,14 +10,6 @@ public final class ConcurrentUtil {
         return object == null ? "null" : object.getClass().getName() + ":" + object.hashCode() + ":" + object.toString();
     }
 
-    public static void rethrow(Throwable exception) {
-        rethrow0(exception);
-    }
-
-    private static <T extends Throwable> void rethrow0(Throwable thr) throws T {
-        throw (T)thr;
-    }
-
     public static VarHandle getVarHandle(final Class<?> lookIn, final String fieldName, final Class<?> fieldType) {
         try {
             return MethodHandles.privateLookupIn(lookIn, MethodHandles.lookup()).findVarHandle(lookIn, fieldName, fieldType);

@@ -180,11 +180,11 @@ public final class IntegerUtil {
      *     long x = ...;
      *     long magic = x * mult;
      *     long divQ = magic >>> bits;
-     *     long divR = ((magic & ((1 << bits) - 1)) * divisor) >>> bits;
+     *     long divR = ((magic & ((1L << bits) - 1L)) * divisor) >>> bits;
      * }
      * </pre>
      *
-     * @param bits The number of bits of precision for the returned result
+     * @param bits The number of bits of precision for the returned result.
      */
     public static long getUnsignedDivisorMagic(final long divisor, final int bits) {
         return (((1L << bits) - 1L) / divisor) + 1;

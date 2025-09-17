@@ -29,17 +29,17 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
 
     protected volatile boolean halted;
 
-    protected final long spinWaitTime;
+    protected final long spinWaitTimeNS;
 
-    protected static final long DEFAULT_SPINWAIT_TIME = (long)(0.1e6);// 0.1ms
+    protected static final long DEFAULT_SPINWAIT_TIME = (long)(0.1e6); // 0.1ms
 
     public PrioritisedQueueExecutorThread(final PrioritisedExecutor queue) {
-        this(queue, DEFAULT_SPINWAIT_TIME); // 0.1ms
+        this(queue, DEFAULT_SPINWAIT_TIME);
     }
 
-    public PrioritisedQueueExecutorThread(final PrioritisedExecutor queue, final long spinWaitTime) { // in ns
+    public PrioritisedQueueExecutorThread(final PrioritisedExecutor queue, final long spinWaitTimeNS) { // in ns
         this.queue = queue;
-        this.spinWaitTime = spinWaitTime;
+        this.spinWaitTimeNS = spinWaitTimeNS;
     }
 
     @Override
@@ -52,61 +52,74 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
         }
     }
 
-    public final void doRun() {
-        final long spinWaitTime = this.spinWaitTime;
+    // rets whether there are more tasks
+    private boolean mainLoop() {
+        this.pollTasks();
 
-        main_loop:
-        for (;;) {
-            this.pollTasks();
-
-            // spinwait
-
+        final long spinWaitTimeNS = this.spinWaitTimeNS;
+        // spinwait if configured
+        if (spinWaitTimeNS > 0L) {
             final long start = System.nanoTime();
-
-            for (;;) {
-                // If we are interrupted for any reason, park() will always return immediately. Clear so that we don't needlessly use cpu in such an event.
-                Thread.interrupted();
-                Thread.yield();
-                LockSupport.parkNanos("Spinwaiting on tasks", 10_000L); // 10us
+            final long deadline = start + spinWaitTimeNS;
+            for (long sleepTime = Math.min(100_000L, spinWaitTimeNS);;) {
+                this.setParked();
 
                 if (this.pollTasks()) {
-                    // restart loop, found tasks
-                    continue main_loop;
+                    this.unsetParked();
+                    return true;
                 }
 
                 if (this.handleClose()) {
-                    return; // we're done
+                    this.unsetParked();
+                    return false;
                 }
 
-                if ((System.nanoTime() - start) >= spinWaitTime) {
+                Thread.interrupted();
+                LockSupport.parkNanos("Short parking", sleepTime);
+                this.unsetParked();
+
+                if (this.pollTasks()) {
+                    return true;
+                }
+
+                final long timeToDeadline = deadline - System.nanoTime();
+
+                if (timeToDeadline <= 0L) {
+                    // begin long parking
                     break;
                 }
-            }
 
-            if (this.handleClose()) {
-                return;
+                // don't try to sleep past the spinwait deadline
+                sleepTime = Math.min(timeToDeadline, sleepTime);
             }
+        } // else: go straight to long parking
 
-            this.setThreadParkedVolatile(true);
+        this.setParked();
 
-            // We need to parse here to avoid a race condition where a thread queues a task before we set parked to true
-            // (i.e. it will not notify us)
-            if (this.pollTasks()) {
-                this.setThreadParkedVolatile(false);
-                continue;
-            }
-
-            if (this.handleClose()) {
-                return;
-            }
-
-            // we don't need to check parked before sleeping, but we do need to check parked in a do-while loop
-            // LockSupport.park() can fail for any reason
-            while (this.getThreadParkedVolatile()) {
-                Thread.interrupted();
-                LockSupport.park("Waiting on tasks");
-            }
+        // We need to parse here to avoid a race condition where a thread queues a task before we set parked to true
+        // (i.e. it will not notify us)
+        if (this.pollTasks()) {
+            this.unsetParked();
+            return true;
         }
+
+        if (this.handleClose()) {
+            this.unsetParked();
+            return false;
+        }
+
+        // we don't need to check parked before sleeping, but we do need to check parked in a do-while loop
+        // LockSupport.park() can fail for any reason
+        while (this.getThreadParkedVolatile()) {
+            Thread.interrupted();
+            LockSupport.park("Long parking");
+        }
+
+        return true;
+    }
+
+    private void doRun() {
+        while (this.mainLoop());
     }
 
     protected void begin() {}
@@ -122,22 +135,20 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
 
         for (;;) {
             if (this.halted) {
-                break;
+                return ret;
             }
             try {
                 if (!this.queue.executeTask()) {
-                    break;
+                    return ret;
                 }
                 ret = true;
             } catch (final Throwable throwable) {
                 LOGGER.error("Exception thrown from prioritized runnable task in thread '" + this.getName() + "'", throwable);
             }
         }
-
-        return ret;
     }
 
-    protected boolean handleClose() {
+    protected final boolean handleClose() {
         if (this.threadShutdown) {
             this.pollTasks(); // this ensures we've emptied the queue
             return true;
@@ -145,12 +156,21 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
         return false;
     }
 
+    private boolean unsetParked() {
+        // avoid contending the cache (i.e. forcing write or exclusive ownership) by doing no writes unless we need to
+        return this.getThreadParkedVolatile() && this.compareAndExchangeThreadParkedVolatile(true, false);
+    }
+
+    private void setParked() {
+        this.setThreadParkedVolatile(true);
+    }
+
     /**
      * Notify this thread that a task has been added to its queue
      * @return {@code true} if this thread was waiting for tasks, {@code false} if it is executing tasks
      */
-    public boolean notifyTasks() {
-        if (this.getThreadParkedVolatile() && this.exchangeThreadParkedVolatile(false)) {
+    public final boolean notifyTasks() {
+        if (this.unsetParked()) {
             LockSupport.unpark(this);
             return true;
         }
@@ -210,8 +230,9 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
     }
 
     @Override
-    public PrioritisedTask queueTask(final Runnable task, final Priority priority, final long subOrder) {
-        final PrioritisedTask ret = this.createTask(task, priority, subOrder);
+    public PrioritisedTask queueTask(final Runnable task, final Priority priority, final long subOrder,
+                                     final long stream) {
+        final PrioritisedTask ret = this.createTask(task, priority, subOrder, stream);
 
         ret.queue();
 
@@ -220,7 +241,7 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
 
 
     @Override
-    public PrioritisedTask createTask(Runnable task) {
+    public PrioritisedTask createTask(final Runnable task) {
         final PrioritisedTask queueTask = this.queue.createTask(task);
 
         return new WrappedTask(queueTask);
@@ -234,8 +255,9 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
     }
 
     @Override
-    public PrioritisedTask createTask(final Runnable task, final Priority priority, final long subOrder) {
-        final PrioritisedTask queueTask = this.queue.createTask(task, priority, subOrder);
+    public PrioritisedTask createTask(final Runnable task, final Priority priority, final long subOrder,
+                                      final long stream) {
+        final PrioritisedTask queueTask = this.queue.createTask(task, priority, subOrder, stream);
 
         return new WrappedTask(queueTask);
     }
@@ -255,13 +277,12 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
         this.threadShutdown = true;
 
         // force thread to respond to the shutdown
-        this.setThreadParkedVolatile(false);
-        LockSupport.unpark(this);
+        this.notifyTasks();
 
         if (wait) {
             boolean interrupted = false;
             for (;;) {
-                if (this.isAlive()) {
+                if (!this.isAlive()) {
                     if (interrupted) {
                         Thread.currentThread().interrupt();
                     }
@@ -299,16 +320,15 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
         this.halted = true;
 
         // force thread to respond to the shutdown
-        this.setThreadParkedVolatile(false);
-        LockSupport.unpark(this);
+        this.notifyTasks();
     }
 
     protected final boolean getThreadParkedVolatile() {
         return (boolean)THREAD_PARKED_HANDLE.getVolatile(this);
     }
 
-    protected final boolean exchangeThreadParkedVolatile(final boolean value) {
-        return (boolean)THREAD_PARKED_HANDLE.getAndSet(this, value);
+    protected final boolean compareAndExchangeThreadParkedVolatile(final boolean expect, final boolean update) {
+        return (boolean)THREAD_PARKED_HANDLE.compareAndExchange(this, expect, update);
     }
 
     protected final void setThreadParkedVolatile(final boolean value) {
@@ -395,8 +415,23 @@ public class PrioritisedQueueExecutorThread extends Thread implements Prioritise
         }
 
         @Override
-        public boolean setPriorityAndSubOrder(final Priority priority, final long subOrder) {
-            return this.queueTask.setPriorityAndSubOrder(priority, subOrder);
+        public long getStream() {
+            return this.queueTask.getStream();
+        }
+
+        @Override
+        public boolean setStream(final long stream) {
+            return this.queueTask.setStream(stream);
+        }
+
+        @Override
+        public boolean setPrioritySubOrderStream(final Priority priority, final long subOrder, final long stream) {
+            return this.queueTask.setPrioritySubOrderStream(priority, subOrder, stream);
+        }
+
+        @Override
+        public PriorityState getPriorityState() {
+            return this.queueTask.getPriorityState();
         }
     }
 }

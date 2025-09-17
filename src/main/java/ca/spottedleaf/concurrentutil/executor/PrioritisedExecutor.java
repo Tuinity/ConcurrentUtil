@@ -92,6 +92,7 @@ public interface PrioritisedExecutor {
      * @param task The task to run.
      * @param priority The priority for the task.
      * @param subOrder The task's suborder.
+     * @param stream The task's stream id.
      *
      * @throws IllegalStateException If this executor has shutdown.
      * @throws NullPointerException If the task is null
@@ -99,7 +100,8 @@ public interface PrioritisedExecutor {
      * @return {@code null} if the current thread immediately executed the task, else returns the prioritised task
      *         associated with the parameter
      */
-    public PrioritisedTask queueTask(final Runnable task, final Priority priority, final long subOrder);
+    public PrioritisedTask queueTask(final Runnable task, final Priority priority, final long subOrder,
+                                     final long stream);
 
     /**
      * Creates, but does not queue or execute, a task at {@link Priority#NORMAL} priority.
@@ -130,13 +132,15 @@ public interface PrioritisedExecutor {
      * @param task The task to run.
      * @param priority The priority for the task.
      * @param subOrder The task's suborder.
+     * @param stream The task's stream.
      *
      * @throws NullPointerException If the task is null
      * @throws IllegalArgumentException If the priority is invalid.
      * @return {@code null} if the current thread immediately executed the task, else returns the prioritised task
      *         associated with the parameter
      */
-    public PrioritisedTask createTask(final Runnable task, final Priority priority, final long subOrder);
+    public PrioritisedTask createTask(final Runnable task, final Priority priority, final long subOrder,
+                                      final long stream);
 
     public static interface PrioritisedTask extends Cancellable {
 
@@ -220,7 +224,7 @@ public interface PrioritisedExecutor {
         public boolean lowerPriority(final Priority priority);
 
         /**
-         * Returns the suborder id associated with this task.
+         * Returns the suborder id associated with this task, or 0 if completing.
          * @return The suborder id associated with this task.
          */
         public long getSubOrder();
@@ -232,7 +236,7 @@ public interface PrioritisedExecutor {
          * @param subOrder Specified new sub order.
          *
          * @return {@code true} if successful, {@code false} if this task is completing or has completed or the queue
-         *         this task was scheduled on was shutdown, or if the current suborder is the same as the new sub order.
+         *         this task was scheduled on was shutdown, or if the current suborder is the same as the new suborder.
          */
         public boolean setSubOrder(final long subOrder);
 
@@ -257,15 +261,54 @@ public interface PrioritisedExecutor {
         public boolean lowerSubOrder(final long subOrder);
 
         /**
-         * Sets the priority and suborder id associated with this task. Ths function has no effect when this task
+         * Returns the stream id associated with this task, or 0 if completing.
+         * @return The stream id associated with this task.
+         */
+        public long getStream();
+
+        /**
+         * Sets the stream id associated with this task. Ths function has no effect when this task
          * is completing or is completed.
          *
-         * @param priority Priority specified
-         * @param subOrder Specified new sub order.
+         * @param stream Specified new stream.
+         *
          * @return {@code true} if successful, {@code false} if this task is completing or has completed or the queue
-         *         this task was scheduled on was shutdown, or if the current priority and suborder are the same as
-         *         the parameters.
+         *         this task was scheduled on was shutdown, or if the current stream is the same as the new stream.
          */
-        public boolean setPriorityAndSubOrder(final Priority priority, final long subOrder);
+        public boolean setStream(final long stream);
+
+        /**
+         * Sets the priority, suborder id, and stream id associated with this task. Ths function has no effect when
+         * this task is completing or is completed.
+         *
+         * @param priority Specified new priority.
+         * @param subOrder Specified new sub order.
+         * @param stream Specified new stream.
+         * @return {@code true} if successful, {@code false} if this task is completing or has completed or the queue
+         *         this task was scheduled on was shutdown, or if the current priority. suborder, and stream are the same
+         *         as the parameters.
+         */
+        public boolean setPrioritySubOrderStream(final Priority priority, final long subOrder,
+                                                 final long stream);
+
+        /**
+         * Atomically retrieves the priority, suborder, and stream for this task. Returns {@code null} if the task
+         * is completing or cancelled.
+         * @return The current priority state, or {@code null} if completing or cancelled.
+         */
+        public PriorityState getPriorityState();
+    }
+
+    public static record PriorityState(Priority priority, long subOrder, long stream) implements Comparable<PriorityState> {
+
+        @Override
+        public int compareTo(final PriorityState other) {
+            final int priorityCompare = this.priority.priority - other.priority.priority;
+            if (priorityCompare != 0) {
+                return priorityCompare;
+            }
+
+            return Long.compare(this.subOrder, other.subOrder);
+        }
     }
 }

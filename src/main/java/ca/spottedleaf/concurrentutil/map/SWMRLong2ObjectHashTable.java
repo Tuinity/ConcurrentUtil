@@ -612,53 +612,53 @@ public class SWMRLong2ObjectHashTable<V> {
 
     public static final class TableEntry<V> {
 
-        protected static final VarHandle TABLE_ENTRY_ARRAY_HANDLE = ConcurrentUtil.getArrayHandle(TableEntry[].class);
+        private static final VarHandle TABLE_ENTRY_ARRAY_HANDLE = ConcurrentUtil.getArrayHandle(TableEntry[].class);
 
-        protected final long key;
-        protected V value;
+        private final long key;
+        private V value;
 
-        protected TableEntry<V> next;
+        private TableEntry<V> next;
 
-        protected static final VarHandle VALUE_HANDLE = ConcurrentUtil.getVarHandle(TableEntry.class, "value", Object.class);
-        protected static final VarHandle NEXT_HANDLE = ConcurrentUtil.getVarHandle(TableEntry.class, "next", TableEntry.class);
+        private static final VarHandle VALUE_HANDLE = ConcurrentUtil.getVarHandle(TableEntry.class, "value", Object.class);
+        private static final VarHandle NEXT_HANDLE = ConcurrentUtil.getVarHandle(TableEntry.class, "next", TableEntry.class);
 
         /* value */
 
-        protected final V getValuePlain() {
+        private V getValuePlain() {
             //noinspection unchecked
             return (V)VALUE_HANDLE.get(this);
         }
 
-        protected final V getValueAcquire() {
+        private V getValueAcquire() {
             //noinspection unchecked
             return (V)VALUE_HANDLE.getAcquire(this);
         }
 
-        protected final void setValueRelease(final V to) {
+        private void setValueRelease(final V to) {
             VALUE_HANDLE.setRelease(this, to);
         }
 
         /* next */
 
-        protected final TableEntry<V> getNextPlain() {
+        private TableEntry<V> getNextPlain() {
             //noinspection unchecked
             return (TableEntry<V>)NEXT_HANDLE.get(this);
         }
 
-        protected final TableEntry<V> getNextOpaque() {
+        private TableEntry<V> getNextOpaque() {
             //noinspection unchecked
             return (TableEntry<V>)NEXT_HANDLE.getOpaque(this);
         }
 
-        protected final void setNextPlain(final TableEntry<V> next) {
+        private void setNextPlain(final TableEntry<V> next) {
             NEXT_HANDLE.set(this, next);
         }
 
-        protected final void setNextRelease(final TableEntry<V> next) {
+        private void setNextRelease(final TableEntry<V> next) {
             NEXT_HANDLE.setRelease(this, next);
         }
 
-        protected TableEntry(final long key, final V value) {
+        private TableEntry(final long key, final V value) {
             this.key = key;
             this.value = value;
         }

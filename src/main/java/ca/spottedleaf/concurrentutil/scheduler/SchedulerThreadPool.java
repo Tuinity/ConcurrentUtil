@@ -14,10 +14,10 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 
 /**
- * @deprecated To be replaced
+ * @deprecated To be replaced by {@link ScheduledTaskThreadPool}
  */
 @Deprecated
-public class SchedulerThreadPool {
+public final class SchedulerThreadPool {
 
     public static final long DEADLINE_NOT_SET = Long.MIN_VALUE;
 
@@ -27,7 +27,7 @@ public class SchedulerThreadPool {
             return timeCompare;
         }
 
-        return Long.compare(t1.id, t2.id);
+        return Long.signum(t1.id - t2.id);
     };
 
     private final TickThreadRunner[] runners;
@@ -301,7 +301,7 @@ public class SchedulerThreadPool {
      * is invoked for any scheduled task - otherwise, {@link #runTasks(BooleanSupplier)} may not be invoked to
      * parse intermediate tasks.
      * </p>
-     * @deprecated To be replaced
+     * @deprecated To be replaced by {@link ScheduledTaskThreadPool.SchedulableTick}
      */
     @Deprecated
     public static abstract class SchedulableTick {
@@ -514,6 +514,7 @@ public class SchedulerThreadPool {
                 switch (startStateType) {
                     case STATE_IDLE: {
                         while (this.state.state == STATE_IDLE) {
+                            Thread.interrupted();
                             LockSupport.park();
                             if (this.scheduler.halted) {
                                 return;
@@ -528,6 +529,7 @@ public class SchedulerThreadPool {
                             if (this.state != startState) {
                                 continue main_state_loop;
                             }
+                            Thread.interrupted();
                             final long diff = deadline - System.nanoTime();
                             if (diff <= 0L) {
                                 break;

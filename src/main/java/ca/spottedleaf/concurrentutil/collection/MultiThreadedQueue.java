@@ -1,8 +1,8 @@
 package ca.spottedleaf.concurrentutil.collection;
 
 import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
+import ca.spottedleaf.concurrentutil.util.ThrowUtil;
 import ca.spottedleaf.concurrentutil.util.Validate;
-
 import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1134,7 +1134,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * @return The total number of elements drained.
      */
     public int drain(final Consumer<E> consumer) {
-        return this.drain(consumer, false, ConcurrentUtil::rethrow);
+        return this.drain(consumer, false, ThrowUtil::throwUnchecked);
     }
 
     /**
@@ -1154,7 +1154,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * @return The total number of elements drained.
      */
     public int drain(final Consumer<E> consumer, final boolean preventAdds) {
-        return this.drain(consumer, preventAdds, ConcurrentUtil::rethrow);
+        return this.drain(consumer, preventAdds, ThrowUtil::throwUnchecked);
     }
 
     /**

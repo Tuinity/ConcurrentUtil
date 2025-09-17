@@ -55,7 +55,7 @@ public enum Priority {
 
     // returns whether the priority can be scheduled
     public static boolean isValidPriority(final Priority priority) {
-        return priority != null && priority != priority.COMPLETING;
+        return priority != null && priority != Priority.COMPLETING;
     }
 
     // returns the higher priority of the two
@@ -63,7 +63,7 @@ public enum Priority {
         return p1.isHigherOrEqualPriority(p2) ? p1 : p2;
     }
 
-    // returns the lower priroity of the two
+    // returns the lower priority of the two
     public static Priority min(final Priority p1, final Priority p2) {
         return p1.isLowerOrEqualPriority(p2) ? p1 : p2;
     }

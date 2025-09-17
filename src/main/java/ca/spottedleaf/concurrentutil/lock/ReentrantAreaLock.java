@@ -17,37 +17,37 @@ public final class ReentrantAreaLock {
         this.coordinateShift = coordinateShift;
     }
 
-    public boolean isHeldByCurrentThread(final int x, final int z) {
+    public boolean isHeldByCurrentThread(final int x, final int y) {
         final Thread currThread = Thread.currentThread();
         final int shift = this.coordinateShift;
         final int sectionX = x >> shift;
-        final int sectionZ = z >> shift;
+        final int sectionY = y >> shift;
 
-        final long coordinate = IntPairUtil.key(sectionX, sectionZ);
+        final long coordinate = IntPairUtil.key(sectionX, sectionY);
         final Node node = this.nodes.get(coordinate);
 
         return node != null && node.thread == currThread;
     }
 
-    public boolean isHeldByCurrentThread(final int centerX, final int centerZ, final int radius) {
-        return this.isHeldByCurrentThread(centerX - radius, centerZ - radius, centerX + radius, centerZ + radius);
+    public boolean isHeldByCurrentThread(final int centerX, final int centerY, final int radius) {
+        return this.isHeldByCurrentThread(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
     }
 
-    public boolean isHeldByCurrentThread(final int fromX, final int fromZ, final int toX, final int toZ) {
-        if (fromX > toX || fromZ > toZ) {
+    public boolean isHeldByCurrentThread(final int fromX, final int fromY, final int toX, final int toY) {
+        if (fromX > toX || fromY > toY) {
             throw new IllegalArgumentException();
         }
 
         final Thread currThread = Thread.currentThread();
         final int shift = this.coordinateShift;
         final int fromSectionX = fromX >> shift;
-        final int fromSectionZ = fromZ >> shift;
+        final int fromSectionY = fromY >> shift;
         final int toSectionX = toX >> shift;
-        final int toSectionZ = toZ >> shift;
+        final int toSectionY = toY >> shift;
 
-        for (int currZ = fromSectionZ; currZ <= toSectionZ; ++currZ) {
+        for (int currY = fromSectionY; currY <= toSectionY; ++currY) {
             for (int currX = fromSectionX; currX <= toSectionX; ++currX) {
-                final long coordinate = IntPairUtil.key(currX, currZ);
+                final long coordinate = IntPairUtil.key(currX, currY);
 
                 final Node node = this.nodes.get(coordinate);
 
@@ -60,27 +60,27 @@ public final class ReentrantAreaLock {
         return true;
     }
 
-    public Node tryLock(final int x, final int z) {
-        return this.tryLock(x, z, x, z);
+    public Node tryLock(final int x, final int y) {
+        return this.tryLock(x, y, x, y);
     }
 
-    public Node tryLock(final int centerX, final int centerZ, final int radius) {
-        return this.tryLock(centerX - radius, centerZ - radius, centerX + radius, centerZ + radius);
+    public Node tryLock(final int centerX, final int centerY, final int radius) {
+        return this.tryLock(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
     }
 
-    public Node tryLock(final int fromX, final int fromZ, final int toX, final int toZ) {
-        if (fromX > toX || fromZ > toZ) {
+    public Node tryLock(final int fromX, final int fromY, final int toX, final int toY) {
+        if (fromX > toX || fromY > toY) {
             throw new IllegalArgumentException();
         }
 
         final Thread currThread = Thread.currentThread();
         final int shift = this.coordinateShift;
         final int fromSectionX = fromX >> shift;
-        final int fromSectionZ = fromZ >> shift;
+        final int fromSectionY = fromY >> shift;
         final int toSectionX = toX >> shift;
-        final int toSectionZ = toZ >> shift;
+        final int toSectionY = toY >> shift;
 
-        final long[] areaAffected = new long[(toSectionX - fromSectionX + 1) * (toSectionZ - fromSectionZ + 1)];
+        final long[] areaAffected = new long[(toSectionX - fromSectionX + 1) * (toSectionY - fromSectionY + 1)];
         int areaAffectedLen = 0;
 
         final Node ret = new Node(this, areaAffected, currThread);
@@ -88,9 +88,9 @@ public final class ReentrantAreaLock {
         boolean failed = false;
 
         // try to fast acquire area
-        for (int currZ = fromSectionZ; currZ <= toSectionZ; ++currZ) {
+        for (int currY = fromSectionY; currY <= toSectionY; ++currY) {
             for (int currX = fromSectionX; currX <= toSectionX; ++currX) {
-                final long coordinate = IntPairUtil.key(currX, currZ);
+                final long coordinate = IntPairUtil.key(currX, currY);
 
                 final Node prev = this.nodes.putIfAbsent(coordinate, ret);
 
@@ -132,13 +132,13 @@ public final class ReentrantAreaLock {
         return null;
     }
 
-    public Node lock(final int x, final int z) {
+    public Node lock(final int x, final int y) {
         final Thread currThread = Thread.currentThread();
         final int shift = this.coordinateShift;
         final int sectionX = x >> shift;
-        final int sectionZ = z >> shift;
+        final int sectionY = y >> shift;
 
-        final long coordinate = IntPairUtil.key(sectionX, sectionZ);
+        final long coordinate = IntPairUtil.key(sectionX, sectionY);
         final long[] areaAffected = new long[1];
         areaAffected[0] = coordinate;
 
@@ -166,7 +166,7 @@ public final class ReentrantAreaLock {
             ++failures;
 
             if (failures > 128L && park.add(currThread)) {
-                LockSupport.park();
+                LockSupport.park(park);
             } else {
                 // high contention, spin wait
                 if (failures < 128L) {
@@ -175,38 +175,38 @@ public final class ReentrantAreaLock {
                     }
                     failures = failures << 1;
                 } else if (failures < 1_200L) {
-                    LockSupport.parkNanos(1_000L);
+                    LockSupport.parkNanos(park, 1_000L);
                     failures = failures + 1L;
                 } else { // scale 0.1ms (100us) per failure
                     Thread.yield();
-                    LockSupport.parkNanos(100_000L * failures);
+                    LockSupport.parkNanos(park, 100_000L * failures);
                     failures = failures + 1L;
                 }
             }
         }
     }
 
-    public Node lock(final int centerX, final int centerZ, final int radius) {
-        return this.lock(centerX - radius, centerZ - radius, centerX + radius, centerZ + radius);
+    public Node lock(final int centerX, final int centerY, final int radius) {
+        return this.lock(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
     }
 
-    public Node lock(final int fromX, final int fromZ, final int toX, final int toZ) {
-        if (fromX > toX || fromZ > toZ) {
+    public Node lock(final int fromX, final int fromY, final int toX, final int toY) {
+        if (fromX > toX || fromY > toY) {
             throw new IllegalArgumentException();
         }
 
         final Thread currThread = Thread.currentThread();
         final int shift = this.coordinateShift;
         final int fromSectionX = fromX >> shift;
-        final int fromSectionZ = fromZ >> shift;
+        final int fromSectionY = fromY >> shift;
         final int toSectionX = toX >> shift;
-        final int toSectionZ = toZ >> shift;
+        final int toSectionY = toY >> shift;
 
-        if (((fromSectionX ^ toSectionX) | (fromSectionZ ^ toSectionZ)) == 0) {
-            return this.lock(fromX, fromZ);
+        if (((fromSectionX ^ toSectionX) | (fromSectionY ^ toSectionY)) == 0) {
+            return this.lock(fromX, fromY);
         }
 
-        final long[] areaAffected = new long[(toSectionX - fromSectionX + 1) * (toSectionZ - fromSectionZ + 1)];
+        final long[] areaAffected = new long[(toSectionX - fromSectionX + 1) * (toSectionY - fromSectionY + 1)];
         int areaAffectedLen = 0;
 
         final Node ret = new Node(this, areaAffected, currThread);
@@ -218,9 +218,9 @@ public final class ReentrantAreaLock {
             boolean allOwned = true;
 
             // try to fast acquire area
-            for (int currZ = fromSectionZ; currZ <= toSectionZ; ++currZ) {
+            for (int currY = fromSectionY; currY <= toSectionY; ++currY) {
                 for (int currX = fromSectionX; currX <= toSectionX; ++currX) {
-                    final long coordinate = IntPairUtil.key(currX, currZ);
+                    final long coordinate = IntPairUtil.key(currX, currY);
 
                     final Node prev = this.nodes.putIfAbsent(coordinate, ret);
 
@@ -281,11 +281,11 @@ public final class ReentrantAreaLock {
                     }
                     failures = failures << 1;
                 } else if (failures < 1_200L) {
-                    LockSupport.parkNanos(1_000L);
+                    LockSupport.parkNanos(park, 1_000L);
                     failures = failures + 1L;
                 } else { // scale 0.1ms (100us) per failure
                     Thread.yield();
-                    LockSupport.parkNanos(100_000L * failures);
+                    LockSupport.parkNanos(park, 100_000L * failures);
                     failures = failures + 1L;
                 }
             }
