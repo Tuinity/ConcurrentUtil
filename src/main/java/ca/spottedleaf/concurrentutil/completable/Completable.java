@@ -1,10 +1,10 @@
 package ca.spottedleaf.concurrentutil.completable;
 
 import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
-import ca.spottedleaf.concurrentutil.util.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.lang.invoke.VarHandle;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -87,7 +87,7 @@ public final class Completable<T> {
     }
 
     private static Executor checkExecutor(final Executor executor) {
-        return Validate.notNull(executor, "Executor may not be null");
+        return Objects.requireNonNull(executor, "Executor may not be null");
     }
 
     public Completable() {}
@@ -102,7 +102,7 @@ public final class Completable<T> {
     }
 
     public static <T> Completable<T> failed(final Throwable ex) {
-        Validate.notNull(ex, "Exception may not be null");
+        Objects.requireNonNull(ex, "Exception may not be null");
 
         return new Completable<>(new ExceptionResult(ex));
     }
@@ -181,7 +181,7 @@ public final class Completable<T> {
     }
 
     public boolean completeExceptionally(final Throwable exception) {
-        Validate.notNull(exception, "Exception may not be null");
+        Objects.requireNonNull(exception, "Exception may not be null");
 
         return this.completeRaw(new ExceptionResult(exception));
     }
@@ -303,8 +303,8 @@ public final class Completable<T> {
     }
 
     public <U> Completable<U> thenApply(final Function<? super T, ? extends U> function, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(function, "Function may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<U> ret = new Completable<>();
         this.pushStackOrRun(new ApplyTransform<>(null, this, ret, exceptionHandler, function));
@@ -320,8 +320,8 @@ public final class Completable<T> {
     }
 
     public <U> Completable<U> thenApplyAsync(final Function<? super T, ? extends U> function, final Executor executor, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(function, "Function may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<U> ret = new Completable<>();
         this.pushStackOrRun(new ApplyTransform<>(checkExecutor(executor), this, ret, exceptionHandler, function));
@@ -334,8 +334,8 @@ public final class Completable<T> {
     }
 
     public Completable<Void> thenAccept(final Consumer<? super T> consumer, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(consumer, "Consumer may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(consumer, "Consumer may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<Void> ret = new Completable<>();
         this.pushStackOrRun(new AcceptTransform<>(null, this, ret, exceptionHandler, consumer));
@@ -351,8 +351,8 @@ public final class Completable<T> {
     }
 
     public Completable<Void> thenAcceptAsync(final Consumer<? super T> consumer, final Executor executor, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(consumer, "Consumer may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(consumer, "Consumer may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<Void> ret = new Completable<>();
         this.pushStackOrRun(new AcceptTransform<>(checkExecutor(executor), this, ret, exceptionHandler, consumer));
@@ -365,8 +365,8 @@ public final class Completable<T> {
     }
 
     public Completable<Void> thenRun(final Runnable run, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(run, "Run may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(run, "Run may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<Void> ret = new Completable<>();
         this.pushStackOrRun(new RunTransform<>(null, this, ret, exceptionHandler, run));
@@ -382,8 +382,8 @@ public final class Completable<T> {
     }
 
     public Completable<Void> thenRunAsync(final Runnable run, final Executor executor, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(run, "Run may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(run, "Run may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<Void> ret = new Completable<>();
         this.pushStackOrRun(new RunTransform<>(checkExecutor(executor), this, ret, exceptionHandler, run));
@@ -397,8 +397,8 @@ public final class Completable<T> {
 
     public <U> Completable<U> handle(final BiFunction<? super T, ? super Throwable, ? extends U> function,
                                      final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(function, "Function may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<U> ret = new Completable<>();
         this.pushStackOrRun(new HandleTransform<>(null, this, ret, exceptionHandler, function));
@@ -417,8 +417,8 @@ public final class Completable<T> {
     public <U> Completable<U> handleAsync(final BiFunction<? super T, ? super Throwable, ? extends U> function,
                                           final Executor executor,
                                           final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(function, "Function may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<U> ret = new Completable<>();
         this.pushStackOrRun(new HandleTransform<>(checkExecutor(executor), this, ret, exceptionHandler, function));
@@ -431,8 +431,8 @@ public final class Completable<T> {
     }
 
     public Completable<T> whenComplete(final BiConsumer<? super T, ? super Throwable> consumer, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(consumer, "Consumer may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(consumer, "Consumer may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<T> ret = new Completable<>();
         this.pushStackOrRun(new WhenTransform<>(null, this, ret, exceptionHandler, consumer));
@@ -449,8 +449,8 @@ public final class Completable<T> {
 
     public Completable<T> whenCompleteAsync(final BiConsumer<? super T, ? super Throwable> consumer, final Executor executor,
                                             final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(consumer, "Consumer may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(consumer, "Consumer may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<T> ret = new Completable<>();
         this.pushStackOrRun(new WhenTransform<>(checkExecutor(executor), this, ret, exceptionHandler, consumer));
@@ -463,8 +463,8 @@ public final class Completable<T> {
     }
 
     public Completable<T> exceptionally(final Function<Throwable, ? extends T> function, final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(function, "Function may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<T> ret = new Completable<>();
         this.pushStackOrRun(new ExceptionallyTransform<>(null, this, ret, exceptionHandler, function));
@@ -481,8 +481,8 @@ public final class Completable<T> {
 
     public Completable<T> exceptionallyAsync(final Function<Throwable, ? extends T> function, final Executor executor,
                                              final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
-        Validate.notNull(function, "Function may not be null");
-        Validate.notNull(exceptionHandler, "Exception handler may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
+        Objects.requireNonNull(exceptionHandler, "Exception handler may not be null");
 
         final Completable<T> ret = new Completable<>();
         this.pushStackOrRun(new ExceptionallyTransform<>(checkExecutor(executor), this, ret, exceptionHandler, function));

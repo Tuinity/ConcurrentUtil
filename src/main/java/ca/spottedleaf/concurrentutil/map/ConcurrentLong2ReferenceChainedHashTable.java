@@ -5,16 +5,8 @@ import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
 import ca.spottedleaf.concurrentutil.util.HashUtil;
 import ca.spottedleaf.concurrentutil.util.IntegerUtil;
 import ca.spottedleaf.concurrentutil.util.ThrowUtil;
-import ca.spottedleaf.concurrentutil.util.Validate;
 import java.lang.invoke.VarHandle;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.PrimitiveIterator;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -267,7 +259,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * @throws NullPointerException If value is null
      */
     public boolean containsValue(final V value) {
-        Validate.notNull(value, "Value cannot be null");
+        Objects.requireNonNull(value, "Value cannot be null");
 
         final NodeIterator<V> iterator = new NodeIterator<>(this.table);
 
@@ -470,7 +462,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * @return Old value previously associated with key, or {@code null} if none.
      */
     public V put(final long key, final V value) {
-        Validate.notNull(value, "Value may not be null");
+        Objects.requireNonNull(value, "Value may not be null");
 
         final int hash = getHash(key);
 
@@ -529,7 +521,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * @return Value currently associated with key, or {@code null} if none and {@code value} was associated.
      */
     public V putIfAbsent(final long key, final V value) {
-        Validate.notNull(value, "Value may not be null");
+        Objects.requireNonNull(value, "Value may not be null");
 
         final int hash = getHash(key);
 
@@ -595,7 +587,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * @return Old value previously associated with key, or {@code null} if none.
      */
     public V replace(final long key, final V value) {
-        Validate.notNull(value, "Value may not be null");
+        Objects.requireNonNull(value, "Value may not be null");
 
         final int hash = getHash(key);
 
@@ -649,8 +641,8 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      *         true, then returns {@code expect}.
      */
     public V replace(final long key, final V expect, final V update) {
-        Validate.notNull(expect, "Expect may not be null");
-        Validate.notNull(update, "Update may not be null");
+        Objects.requireNonNull(expect, "Expect may not be null");
+        Objects.requireNonNull(update, "Update may not be null");
 
         final int hash = getHash(key);
 
@@ -848,7 +840,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      *         then returns the current (non-null) mapped value for key.
      */
     public V removeIf(final long key, final Predicate<? super V> predicate) {
-        Validate.notNull(predicate, "Predicate may not be null");
+        Objects.requireNonNull(predicate, "Predicate may not be null");
 
         final int hash = getHash(key);
 
@@ -1200,7 +1192,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * </p>
      */
     public V merge(final long key, final V def, final BiFunction<? super V, ? super V, ? extends V> function) {
-        Validate.notNull(def, "Default value may not be null");
+        Objects.requireNonNull(def, "Default value may not be null");
 
         final int hash = getHash(key);
 
@@ -1360,7 +1352,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         @Override
         public void forEachRemaining(final Consumer<? super TableEntry<V>> action) {
-            Validate.notNull(action, "Action may not be null");
+            Objects.requireNonNull(action, "Action may not be null");
             while (this.hasNext()) {
                 action.accept(this.next());
             }
@@ -1385,7 +1377,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         @Override
         public void forEachRemaining(final Consumer<? super Long> action) {
-            Validate.notNull(action, "Action may not be null");
+            Objects.requireNonNull(action, "Action may not be null");
 
             if (action instanceof LongConsumer longConsumer) {
                 this.forEachRemaining(longConsumer);
@@ -1399,7 +1391,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         @Override
         public void forEachRemaining(final LongConsumer action) {
-            Validate.notNull(action, "Action may not be null");
+            Objects.requireNonNull(action, "Action may not be null");
             while (this.hasNext()) {
                 action.accept(this.nextLong());
             }
@@ -1419,7 +1411,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         @Override
         public void forEachRemaining(final Consumer<? super V> action) {
-            Validate.notNull(action, "Action may not be null");
+            Objects.requireNonNull(action, "Action may not be null");
             while (this.hasNext()) {
                 action.accept(this.next());
             }

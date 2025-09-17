@@ -2,16 +2,8 @@ package ca.spottedleaf.concurrentutil.collection;
 
 import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
 import ca.spottedleaf.concurrentutil.util.ThrowUtil;
-import ca.spottedleaf.concurrentutil.util.Validate;
 import java.lang.invoke.VarHandle;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Queue;
-import java.util.Spliterator;
-import java.util.Spliterators;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.function.Predicate;
@@ -118,11 +110,11 @@ public class MultiThreadedQueue<E> implements Queue<E> {
             return;
         }
 
-        final LinkedNode<E> head = new LinkedNode<>(Validate.notNull(elements.next(), "Null element"), null);
+        final LinkedNode<E> head = new LinkedNode<>(Objects.requireNonNull(elements.next(), "Null element"), null);
         LinkedNode<E> tail = head;
 
         while (elements.hasNext()) {
-            final LinkedNode<E> next = new LinkedNode<>(Validate.notNull(elements.next(), "Null element"), null);
+            final LinkedNode<E> next = new LinkedNode<>(Objects.requireNonNull(elements.next(), "Null element"), null);
             tail.setNextPlain(next);
             tail = next;
         }
@@ -192,7 +184,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean offer(final E element) {
-        Validate.notNull(element, "Null element");
+        Objects.requireNonNull(element, "Null element");
 
         final LinkedNode<E> node = new LinkedNode<>(element, null);
 
@@ -240,7 +232,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * @return The head if it matches the predicate, or {@code null} if it did not or this queue is empty.
      */
     public E pollIf(final Predicate<E> predicate) {
-        return this.removeHead(Validate.notNull(predicate, "Null predicate"));
+        return this.removeHead(Objects.requireNonNull(predicate, "Null predicate"));
     }
 
     /**
@@ -334,7 +326,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * @return {@code true} if the queue now allows additions, {@code false} if the element was added.
      */
     public boolean addOrAllowAdds(final E element) {
-        Validate.notNull(element, "Null element");
+        Objects.requireNonNull(element, "Null element");
         int failures = 0;
 
         final LinkedNode<E> append = new LinkedNode<>(element, null);
@@ -486,7 +478,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean remove(final Object object) {
-        Validate.notNull(object, "Null object to remove");
+        Objects.requireNonNull(object, "Null object to remove");
 
         for (LinkedNode<E> curr = this.getHeadOpaque();;) {
             final LinkedNode<E> next = curr.getNextVolatile();
@@ -512,7 +504,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean removeIf(final Predicate<? super E> filter) {
-        Validate.notNull(filter, "Null filter");
+        Objects.requireNonNull(filter, "Null filter");
 
         boolean ret = false;
 
@@ -538,7 +530,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean removeAll(final Collection<?> collection) {
-        Validate.notNull(collection, "Null collection");
+        Objects.requireNonNull(collection, "Null collection");
 
         boolean ret = false;
 
@@ -565,7 +557,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean retainAll(final Collection<?> collection) {
-        Validate.notNull(collection, "Null collection");
+        Objects.requireNonNull(collection, "Null collection");
 
         boolean ret = false;
 
@@ -640,7 +632,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public <T> T[] toArray(final IntFunction<T[]> generator) {
-        Validate.notNull(generator, "Null generator");
+        Objects.requireNonNull(generator, "Null generator");
 
         final List<T> ret = new ArrayList<>();
 
@@ -728,7 +720,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * {@code false} if the specified iterable contains no elements.
      */
     public boolean addAll(final Iterable<? extends E> iterable) {
-        Validate.notNull(iterable, "Null iterable");
+        Objects.requireNonNull(iterable, "Null iterable");
 
         final Iterator<? extends E> elements = iterable.iterator();
         if (!elements.hasNext()) {
@@ -738,11 +730,11 @@ public class MultiThreadedQueue<E> implements Queue<E> {
         /* Build a list of nodes to append */
         /* This is an much faster due to the fact that zero additional synchronization is performed */
 
-        final LinkedNode<E> head = new LinkedNode<>(Validate.notNull(elements.next(), "Null element"), null);
+        final LinkedNode<E> head = new LinkedNode<>(Objects.requireNonNull(elements.next(), "Null element"), null);
         LinkedNode<E> tail = head;
 
         while (elements.hasNext()) {
-            final LinkedNode<E> next = new LinkedNode<>(Validate.notNull(elements.next(), "Null element"), null);
+            final LinkedNode<E> next = new LinkedNode<>(Objects.requireNonNull(elements.next(), "Null element"), null);
             tail.setNextPlain(next);
             tail = next;
         }
@@ -769,18 +761,17 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * {@code false} if the specified array has a length of 0.
      */
     public boolean addAll(final E[] items, final int off, final int len) {
-        Validate.notNull(items, "Items may not be null");
-        Validate.arrayBounds(off, len, items.length, "Items array indices out of bounds");
+        Objects.checkFromIndexSize(off, len, items.length);
 
         if (len == 0) {
             return false;
         }
 
-        final LinkedNode<E> head = new LinkedNode<>(Validate.notNull(items[off], "Null element"), null);
+        final LinkedNode<E> head = new LinkedNode<>(Objects.requireNonNull(items[off], "Null element"), null);
         LinkedNode<E> tail = head;
 
         for (int i = 1; i < len; ++i) {
-            final LinkedNode<E> next = new LinkedNode<>(Validate.notNull(items[off + i], "Null element"), null);
+            final LinkedNode<E> next = new LinkedNode<>(Objects.requireNonNull(items[off + i], "Null element"), null);
             tail.setNextPlain(next);
             tail = next;
         }
@@ -793,7 +784,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean containsAll(final Collection<?> collection) {
-        Validate.notNull(collection, "Null collection");
+        Objects.requireNonNull(collection, "Null collection");
 
         for (final Object element : collection) {
             if (!this.contains(element)) {
@@ -853,7 +844,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public boolean contains(final Object object) {
-        Validate.notNull(object, "Null object");
+        Objects.requireNonNull(object, "Null object");
 
         for (LinkedNode<E> curr = this.getHeadOpaque();;) {
             final LinkedNode<E> next = curr.getNextVolatile();
@@ -878,7 +869,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * @return The first element that matched the predicate, {@code null} if none matched.
      */
     public E find(final Predicate<E> predicate) {
-        Validate.notNull(predicate, "Null predicate");
+        Objects.requireNonNull(predicate, "Null predicate");
 
         for (LinkedNode<E> curr = this.getHeadOpaque();;) {
             final LinkedNode<E> next = curr.getNextVolatile();
@@ -902,7 +893,7 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      */
     @Override
     public void forEach(final Consumer<? super E> action) {
-        Validate.notNull(action, "Null action");
+        Objects.requireNonNull(action, "Null action");
 
         for (LinkedNode<E> curr = this.getHeadOpaque();;) {
             final LinkedNode<E> next = curr.getNextVolatile();
@@ -1175,8 +1166,8 @@ public class MultiThreadedQueue<E> implements Queue<E> {
      * @return The total number of elements drained.
      */
     public int drain(final Consumer<E> consumer, final boolean preventAdds, final Consumer<Throwable> exceptionHandler) {
-        Validate.notNull(consumer, "Null consumer");
-        Validate.notNull(exceptionHandler, "Null exception handler");
+        Objects.requireNonNull(consumer, "Null consumer");
+        Objects.requireNonNull(exceptionHandler, "Null exception handler");
 
         /* This function assumes proper synchronization is made to ensure drain and no other read function are called concurrently */
         /* This allows plain write usages instead of opaque or higher */
