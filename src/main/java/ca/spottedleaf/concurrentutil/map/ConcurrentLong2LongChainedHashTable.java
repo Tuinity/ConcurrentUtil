@@ -151,7 +151,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         return this.loadFactor;
     }
 
-    protected static TableEntry getAtIndexVolatile(final TableEntry[] table, final int index) {
+    protected static TableEntry getAtIndexAcquire(final TableEntry[] table, final int index) {
         return (TableEntry)TableEntry.TABLE_ENTRY_ARRAY_HANDLE.getVolatile(table, index);
     }
 
@@ -194,7 +194,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
 
         TableEntry[] table = this.table;
         for (;;) {
-            TableEntry node = getAtIndexVolatile(table, hash & (table.length - 1));
+            TableEntry node = getAtIndexAcquire(table, hash & (table.length - 1));
 
             if (node == null) {
                 // node == null
@@ -361,7 +361,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         final TableEntry[] work = new TableEntry[1 << capDiffShift]; // typically, capDiffShift = 1
 
         for (int i = 0, len = oldTable.length; i < len; ++i) {
-            TableEntry binNode = getAtIndexVolatile(oldTable, i);
+            TableEntry binNode = getAtIndexAcquire(oldTable, i);
 
             for (;;) {
                 if (binNode == null) {
@@ -373,7 +373,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
 
                 // need write lock to block other writers
                 synchronized (binNode) {
-                    if (binNode != (binNode = getAtIndexVolatile(oldTable, i))) {
+                    if (binNode != (binNode = getAtIndexAcquire(oldTable, i))) {
                         continue;
                     }
 
@@ -457,7 +457,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -474,7 +474,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -513,7 +513,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -535,7 +535,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -572,7 +572,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -585,7 +585,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -622,7 +622,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -635,7 +635,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -673,7 +673,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -689,7 +689,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 long ret = 0L;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -741,7 +741,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -757,7 +757,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 long ret = 0L;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -817,7 +817,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -833,7 +833,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 long ret = 0L;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -884,7 +884,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -901,7 +901,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -942,7 +942,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry node = getAtIndexVolatile(table, index);
+            TableEntry node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -959,7 +959,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                 long ret = 0L;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -1320,7 +1320,7 @@ public class ConcurrentLong2LongChainedHashTable implements Iterable<ConcurrentL
                         }
                     }
 
-                    final TableEntry entry = getAtIndexVolatile(table, idx);
+                    final TableEntry entry = getAtIndexAcquire(table, idx);
                     if (entry == null) {
                         idx += increment;
                         continue;

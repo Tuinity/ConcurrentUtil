@@ -41,6 +41,8 @@ import java.util.function.Predicate;
  */
 public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<ConcurrentLong2ReferenceChainedHashTable.TableEntry<V>> {
 
+    private static final TableEntry<?> RESIZE_NODE = new TableEntry(0L, null);
+
     protected static final int DEFAULT_CAPACITY = 16;
     protected static final float DEFAULT_LOAD_FACTOR = 0.75f;
     protected static final int MAXIMUM_CAPACITY = Integer.MIN_VALUE >>> 1;
@@ -49,6 +51,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     protected final float loadFactor;
 
     protected volatile TableEntry<V>[] table;
+    protected volatile TableEntry<V>[] nextTable;
 
     protected static final int THRESHOLD_NO_RESIZE = -1;
     protected static final int THRESHOLD_RESIZING  = -2;
@@ -159,9 +162,9 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         return this.loadFactor;
     }
 
-    protected static <V> TableEntry<V> getAtIndexVolatile(final TableEntry<V>[] table, final int index) {
+    protected static <V> TableEntry<V> getAtIndexAcquire(final TableEntry<V>[] table, final int index) {
         //noinspection unchecked
-        return (TableEntry<V>)TableEntry.TABLE_ENTRY_ARRAY_HANDLE.getVolatile(table, index);
+        return (TableEntry<V>)TableEntry.TABLE_ENTRY_ARRAY_HANDLE.getAcquire(table, index);
     }
 
     protected static <V> void setAtIndexRelease(final TableEntry<V>[] table, final int index, final TableEntry<V> value) {
@@ -178,6 +181,21 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         return (TableEntry<V>)TableEntry.TABLE_ENTRY_ARRAY_HANDLE.compareAndExchange(table, index, expect, update);
     }
 
+    protected TableEntry<V>[] fetchNewTable(final TableEntry<V>[] expectedCurr) {
+        final TableEntry<V>[] candidate = this.nextTable;
+        final TableEntry<V>[] current = this.table;
+        // Note: We fetch a new table once RESIZE_NODE is encountered in the expectedCurr table.
+        //       The resize logic guarantees that the RESIZE_NODE is only written to a bin once
+        //       the chain is fully moved to the next table. Provided that we actually fetch the next table,
+        //       we can guarantee that we will see the chain in the next table. However, we may not end up fetching
+        //       the next table, but rather the resize after that - which will not guarantee that we see the correct
+        //       chain. We catch this race condition by checking if the current table is the same as the expected table.
+        //       If the current table is not the expected table, then we just use that - as it is guaranteed to either
+        //       contain the full chain or be referenced to the next table.
+        // Note: the read order of next and current table is important, do not re-order.
+        return expectedCurr == current ? candidate : current;
+    }
+
     /**
      * Returns the possible node associated with the key, or {@code null} if there is no such node. The node
      * returned may have a {@code null} {@link TableEntry#value}, in which case the node is a placeholder for
@@ -189,16 +207,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         TableEntry<V>[] table = this.table;
         for (;;) {
-            TableEntry<V> node = getAtIndexVolatile(table, hash & (table.length - 1));
+            TableEntry<V> node = getAtIndexAcquire(table, hash & (table.length - 1));
 
             if (node == null) {
                 // node == null
                 return node;
             }
 
-            if (node.resize) {
-                // noinspection unchecked
-                table = (TableEntry<V>[])node.getValuePlain();
+            if (node == RESIZE_NODE) {
+                table = this.fetchNewTable(table);
                 continue;
             }
 
@@ -261,7 +278,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     public boolean containsValue(final V value) {
         Objects.requireNonNull(value, "Value cannot be null");
 
-        final NodeIterator<V> iterator = new NodeIterator<>(this.table);
+        final NodeIterator<V> iterator = new NodeIterator<>(this);
 
         TableEntry<V> node;
         while ((node = iterator.findNext()) != null) {
@@ -345,8 +362,6 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         // noinspection unchecked
         final TableEntry<V>[] newTable = new TableEntry[capacity];
-        // noinspection unchecked
-        final TableEntry<V> resizeNode = new TableEntry<>(0L, (V)newTable, true);
 
         // transfer nodes from old table
 
@@ -372,19 +387,19 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         final TableEntry<V>[] work = new TableEntry[1 << capDiffShift]; // typically, capDiffShift = 1
 
         for (int i = 0, len = oldTable.length; i < len; ++i) {
-            TableEntry<V> binNode = getAtIndexVolatile(oldTable, i);
+            TableEntry<V> binNode = getAtIndexAcquire(oldTable, i);
 
             for (;;) {
                 if (binNode == null) {
                     // just need to replace the bin node, do not need to move anything
-                    if (null == (binNode = compareAndExchangeAtIndexVolatile(oldTable, i, null, resizeNode))) {
+                    if (null == (binNode = compareAndExchangeAtIndexVolatile(oldTable, i, null, (TableEntry<V>)RESIZE_NODE))) {
                         break;
                     } // else: binNode != null, fall through
                 }
 
                 // need write lock to block other writers
                 synchronized (binNode) {
-                    if (binNode != (binNode = getAtIndexVolatile(oldTable, i))) {
+                    if (binNode != (binNode = getAtIndexAcquire(oldTable, i))) {
                         continue;
                     }
 
@@ -427,7 +442,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         }
                     }
 
-                    setAtIndexRelease(oldTable, i, resizeNode);
+                    setAtIndexRelease(oldTable, i, (TableEntry<V>)RESIZE_NODE);
                     break;
                 }
             }
@@ -471,7 +486,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -482,13 +497,13 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     } // else: node != null, fall through
                 }
 
-                if (node.resize) {
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -530,7 +545,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -541,9 +556,8 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     } // else: node != null, fall through
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -556,7 +570,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -596,21 +610,20 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
                     return null;
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -651,21 +664,20 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
                     return null;
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -703,16 +715,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
                     return null;
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -720,7 +731,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 V ret = null;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -772,16 +783,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
                     return null;
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -789,7 +799,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 V ret = null;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -849,16 +859,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
                     return null;
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -866,7 +875,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 V ret = null;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
@@ -915,7 +924,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 V ret = null;
@@ -953,9 +962,8 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     }
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -963,7 +971,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 boolean added = false;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -1030,7 +1038,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 V ret = null;
@@ -1068,9 +1076,8 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     }
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -1085,7 +1092,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 boolean added = false;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -1130,23 +1137,22 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
                     return null;
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
                 boolean removed = false;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -1201,7 +1207,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexVolatile(table, index);
+            TableEntry<V> node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
@@ -1212,9 +1218,8 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     } // else: node != null, fall through
                 }
 
-                if (node.resize) {
-                    // noinspection unchecked
-                    table = (TableEntry<V>[])node.getValuePlain();
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
                     continue table_loop;
                 }
 
@@ -1223,7 +1228,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 V ret = null;
 
                 synchronized (node) {
-                    if (node != (node = getAtIndexVolatile(table, index))) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
@@ -1286,7 +1291,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         // it is possible to optimise this to directly interact with the table,
         // but we do need to be careful when interacting with resized tables,
         // and the NodeIterator already does this logic
-        final NodeIterator<V> nodeIterator = new NodeIterator<>(this.table);
+        final NodeIterator<V> nodeIterator = new NodeIterator<>(this);
 
         TableEntry<V> node;
         while ((node = nodeIterator.findNext()) != null) {
@@ -1425,7 +1430,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         protected TableEntry<V> nextToReturn;
 
         protected BaseIteratorImpl(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map.table);
+            super(map);
             this.map = map;
         }
 
@@ -1473,14 +1478,16 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
     protected static class NodeIterator<V> {
 
+        protected final ConcurrentLong2ReferenceChainedHashTable<V> map;
         protected TableEntry<V>[] currentTable;
         protected ResizeChain<V> resizeChain;
         protected TableEntry<V> last;
         protected int nextBin;
         protected int increment;
 
-        protected NodeIterator(final TableEntry<V>[] baseTable) {
-            this.currentTable = baseTable;
+        protected NodeIterator(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
+            this.map = map;
+            this.currentTable = map.table;
             this.increment = 1;
         }
 
@@ -1523,12 +1530,11 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
             return newTable;
         }
 
-        private TableEntry<V>[] pushResizeChain(final TableEntry<V>[] table, final TableEntry<V> entry) {
+        private TableEntry<V>[] pushResizeChain(final TableEntry<V>[] table) {
             final ResizeChain<V> chain = this.resizeChain;
 
             if (chain == null) {
-                // noinspection unchecked
-                final TableEntry<V>[] nextTable = (TableEntry<V>[])entry.getValuePlain();
+                final TableEntry<V>[] nextTable = this.map.fetchNewTable(table);
 
                 final ResizeChain<V> oldChain = new ResizeChain<>(table, null, null);
                 final ResizeChain<V> currChain = new ResizeChain<>(nextTable, oldChain, null);
@@ -1542,8 +1548,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
             } else {
                 ResizeChain<V> currChain = chain.next;
                 if (currChain == null) {
-                    // noinspection unchecked
-                    final TableEntry<V>[] ret = (TableEntry<V>[])entry.getValuePlain();
+                    final TableEntry<V>[] ret = this.map.fetchNewTable(table);
                     currChain = new ResizeChain<>(ret, chain, null);
                     chain.next = currChain;
 
@@ -1596,15 +1601,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         }
                     }
 
-                    final TableEntry<V> entry = getAtIndexVolatile(table, idx);
+                    final TableEntry<V> entry = getAtIndexAcquire(table, idx);
                     if (entry == null) {
                         idx += increment;
                         continue;
                     }
 
-                    if (entry.resize) {
+                    if (entry == RESIZE_NODE) {
                         // push onto resize chain
-                        table = this.pushResizeChain(table, entry);
+                        table = this.pushResizeChain(table);
                         increment = this.increment;
                         continue;
                     }
@@ -1769,8 +1774,6 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         private static final VarHandle TABLE_ENTRY_ARRAY_HANDLE = ConcurrentUtil.getArrayHandle(TableEntry[].class);
 
-        private final boolean resize;
-
         private final long key;
 
         private volatile V value;
@@ -1829,13 +1832,6 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
 
         public TableEntry(final long key, final V value) {
-            this.resize = false;
-            this.key = key;
-            this.setValuePlain(value);
-        }
-
-        public TableEntry(final long key, final V value, final boolean resize) {
-            this.resize = resize;
             this.key = key;
             this.setValuePlain(value);
         }
