@@ -123,7 +123,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         this.loadFactor = loadFactor;
         // noinspection unchecked
-        this.table = (TableEntry<V>[])new TableEntry[tableSize];
+        this.nextTable = this.table = (TableEntry<V>[])new TableEntry[tableSize];
     }
 
     public static <V> ConcurrentLong2ReferenceChainedHashTable<V> createWithCapacity(final int capacity) {
@@ -367,6 +367,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         // does not need to be volatile read, just plain
         final TableEntry<V>[] oldTable = this.table;
+        this.nextTable = newTable;
 
         // when resizing, the old entries at bin i (where i = hash % oldTable.length) are assigned to
         // bin k in the new table (where k = hash % newTable.length)
