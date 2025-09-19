@@ -6,7 +6,6 @@ import ca.spottedleaf.concurrentutil.map.ConcurrentLong2ReferenceChainedHashTabl
 import ca.spottedleaf.concurrentutil.util.IntPairUtil;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicLong;
@@ -194,7 +193,6 @@ public final class AreaDependentQueue {
 
     private static final class Position {
 
-        //private final TaskQueue queue = new TaskQueue();
         private final PriorityQueue<QueuedTask> queue = new PriorityQueue<>();
         private QueuedTask firstOrRunning;
 
@@ -202,8 +200,6 @@ public final class AreaDependentQueue {
         // it is the callers responsibility to schedule the task if the waiting pos == 0
         // returns true if the queued task is the first in queue
         boolean addTask(final QueuedTask task, final List<PrioritisedExecutor.PrioritisedTask> toCancel) {
-            /*final int addIdx = this.queue.add(task);
-            if (addIdx != 0) {*/
             this.queue.add(task);
             if (this.queue.peek() != task) {
                 // behind another task
@@ -1182,125 +1178,6 @@ public final class AreaDependentQueue {
 
             // break ties
             return Long.signum(this.positionedTask.taskId - other.positionedTask.taskId);
-        }
-    }
-
-    private static final class TaskQueue {
-
-        private QueuedTask[] queue = new QueuedTask[4];
-        private int size;
-
-        private static int siftUp(final QueuedTask[] queue, int index, final QueuedTask val) {
-            while (index > 0) {
-                final int p = (index - 1) >>> 1;
-                final QueuedTask parent = queue[p];
-                if (val.compareTo(parent) >= 0) {
-                    break;
-                }
-                queue[index] = parent;
-                index = p;
-            }
-            queue[index] = val;
-            return index;
-        }
-
-        private static int siftDown(final QueuedTask[] queue, int index, final QueuedTask val) {
-            // TODO
-            throw new UnsupportedOperationException();
-        }
-
-        private static int find(final QueuedTask[] queue, final int size, final QueuedTask probe) {
-            for (int idx = 0, len = Math.min(size, queue.length); idx < len; ++idx) {
-                final QueuedTask val = queue[idx];
-                if (val == probe) {
-                    return idx;
-                }
-                continue;
-            }
-
-            return -1;
-        }
-
-        // rets insertion index
-        public int add(final QueuedTask task) {
-            QueuedTask[] queue = this.queue;
-            final int insert = this.size++;
-            if (insert == queue.length) {
-                this.queue = queue = Arrays.copyOf(queue, insert * 2);
-            }
-
-            return siftUp(queue, insert, task);
-        }
-
-        public void remove(final QueuedTask task) {
-            final QueuedTask[] queue = this.queue;
-            final int idx = find(queue, this.size, task);
-
-            if (idx == -1) {
-                return;
-            }
-
-            final int move = --this.size;
-            final QueuedTask last = queue[move];
-            queue[move] = null;
-
-            if (move == idx) {
-                // no sifting needed
-                return;
-            }
-
-            final int insert = siftDown(queue, idx, last);
-            if (insert == idx) {
-                siftUp(queue, idx, last);
-            }
-        }
-
-        public int reinsert(final QueuedTask task) {
-            final QueuedTask[] queue = this.queue;
-            final int size = this.size;
-            final int idx = find(queue, size, task);
-
-            if (idx == -1 || size == 1) {
-                return idx;
-            }
-
-            final int insert = siftDown(queue, idx, task);
-            if (insert != idx) {
-                return insert;
-            }
-            return siftUp(queue, idx, task);
-        }
-
-        public QueuedTask peek() {
-            return this.queue[0];
-        }
-
-        public QueuedTask poll() {
-            final QueuedTask[] queue = this.queue;
-            final QueuedTask ret = queue[0];
-            if (ret == null) {
-                return ret;
-            }
-
-            final int move = --this.size;
-            final QueuedTask last = queue[move];
-            queue[move] = null;
-
-            if (move == 0) {
-                return ret;
-            }
-
-            siftDown(queue, 0, last);
-
-            return ret;
-        }
-
-        public int size() {
-            return this.size;
-        }
-
-        public boolean isEmpty() {
-            return this.size != 0;
         }
     }
 }

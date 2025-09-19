@@ -41,7 +41,7 @@ import java.util.function.Predicate;
  */
 public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<ConcurrentLong2ReferenceChainedHashTable.TableEntry<V>> {
 
-    private static final TableEntry<?> RESIZE_NODE = new TableEntry(0L, null);
+    private static final TableEntry<?> RESIZE_NODE = new TableEntry<>(0L, null);
 
     protected static final int DEFAULT_CAPACITY = 16;
     protected static final float DEFAULT_LOAD_FACTOR = 0.75f;
