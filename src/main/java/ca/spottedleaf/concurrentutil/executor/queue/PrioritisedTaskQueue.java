@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 public final class PrioritisedTaskQueue implements PrioritisedExecutor {
 
@@ -26,6 +27,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
     private final AtomicLong subOrderGenerator;
     private final AtomicBoolean shutdown = new AtomicBoolean();
     private final ConcurrentSkipListMap<PrioritisedQueuedTask.Holder, Boolean> tasks;
+    private final Consumer<PrioritisedTask> queueHook;
 
     public PrioritisedTaskQueue() {
         this(new AtomicLong());
@@ -36,8 +38,13 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
     }
 
     public PrioritisedTaskQueue(final AtomicLong subOrderGenerator, final long flags) {
+        this(subOrderGenerator, flags, null);
+    }
+
+    public PrioritisedTaskQueue(final AtomicLong subOrderGenerator, final long flags, final Consumer<PrioritisedTask> queueHook) {
         this.subOrderGenerator = subOrderGenerator;
         this.tasks = new ConcurrentSkipListMap<>(((flags & FLAG_ORDER_BY_STREAM) != 0L) ? PrioritisedQueuedTask.COMPARATOR_STREAM : PrioritisedQueuedTask.COMPARATOR);
+        this.queueHook = queueHook;
     }
 
     @Override
@@ -281,6 +288,10 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
             }
 
+            final Consumer<PrioritisedTask> queueHook = PrioritisedTaskQueue.this.queueHook;
+            if (queueHook != null) {
+                queueHook.accept(this);
+            }
 
             return true;
         }
@@ -347,6 +358,22 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
             }
         }
 
+        private void updateHolder(final int priority, final long subOrder, final long stream, final long id) {
+            final Holder oldHolder = this.holder;
+            if (oldHolder == null) {
+                return;
+            }
+
+            final Holder newHolder = new Holder(this, priority, subOrder, stream, id);
+            this.holder = newHolder;
+
+            PrioritisedTaskQueue.this.tasks.put(newHolder, Boolean.TRUE);
+
+            if (oldHolder.markRemoved()) {
+                PrioritisedTaskQueue.this.tasks.remove(oldHolder);
+            }
+        }
+
         @Override
         public boolean setPriority(final Priority priority) {
             synchronized (this) {
@@ -355,14 +382,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.priority = priority;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(priority.priority, this.subOrder, this.stream, this.id);
 
                 return true;
             }
@@ -376,14 +396,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.priority = priority;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(priority.priority, this.subOrder, this.stream, this.id);
 
                 return true;
             }
@@ -397,14 +410,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.priority = priority;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(priority.priority, this.subOrder, this.stream, this.id);
 
                 return true;
             }
@@ -425,14 +431,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.subOrder = subOrder;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(this.priority.priority, subOrder, this.stream, this.id);
 
                 return true;
             }
@@ -446,14 +445,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.subOrder = subOrder;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(this.priority.priority, subOrder, this.stream, this.id);
 
                 return true;
             }
@@ -467,14 +459,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.subOrder = subOrder;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(this.priority.priority, subOrder, this.stream, this.id);
 
                 return true;
             }
@@ -495,14 +480,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 }
 
                 this.stream = stream;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(this.priority.priority, this.subOrder, stream, this.id);
 
                 return true;
             }
@@ -519,14 +497,7 @@ public final class PrioritisedTaskQueue implements PrioritisedExecutor {
                 this.priority = priority;
                 this.subOrder = subOrder;
                 this.stream = stream;
-
-                if (this.holder != null) {
-                    if (this.holder.markRemoved()) {
-                        PrioritisedTaskQueue.this.tasks.remove(this.holder);
-                    }
-                    this.holder = new Holder(this, priority.priority, this.subOrder, this.stream, this.id);
-                    PrioritisedTaskQueue.this.tasks.put(this.holder, Boolean.TRUE);
-                }
+                this.updateHolder(priority.priority, subOrder, stream, this.id);
 
                 return true;
             }
