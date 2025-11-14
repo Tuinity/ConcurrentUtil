@@ -1,5 +1,5 @@
 [versions]
-it-unimi-dsi-fastutil = "8.5.18"
+it-unimi-dsi-fastutil = "8.5.15"
 org-slf4j-slf4j-api = "2.0.17"
 
 [libraries]
