@@ -199,6 +199,10 @@ public final class BalancedPrioritisedThreadPool {
                 }
             }
         }
+
+        for (final WorkerThread thread : this.threads.getArray()) {
+            thread.notifyTasks();
+        }
     }
 
     public OrderedStreamGroup createOrderedStreamGroup() {
