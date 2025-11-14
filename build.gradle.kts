@@ -1,5 +1,5 @@
 plugins {
-    val indraVer = "3.1.3"
+    val indraVer = "3.2.0"
     id("net.kyori.indra") version indraVer
     id("net.kyori.indra.publishing") version indraVer
 }
