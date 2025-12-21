@@ -2,6 +2,8 @@ package ca.spottedleaf.concurrentutil.util;
 
 public final class TimeUtil {
 
+    public static final long DEADLINE_NOT_SET = Long.MIN_VALUE;
+
     /*
      * The comparator is not a valid comparator for every long value. To prove where it is valid, see below.
      *
@@ -30,7 +32,35 @@ public final class TimeUtil {
         final long diff = t1 - t2;
 
         // HD, Section 2-7
-        return (int) ((diff >> 63) | (-diff >>> 63));
+        return (int)((diff >> 63) | (-diff >>> 63));
+    }
+
+    /**
+     * Tests whether {@code t1} is before {@code t2}.
+     */
+    public static boolean isBefore(final long t1, final long t2) {
+        return compareTimes(t1, t2) < 0L;
+    }
+
+    /**
+     * Tests whether {@code t1} is the same as or before {@code t2}.
+     */
+    public static boolean isBeforeOrSame(final long t1, final long t2) {
+        return compareTimes(t1, t2) <= 0L;
+    }
+
+    /**
+     * Tests whether {@code t1} is after {@code t2}.
+     */
+    public static boolean isAfter(final long t1, final long t2) {
+        return compareTimes(t1, t2) > 0L;
+    }
+
+    /**
+     * Tests whether {@code t1} is the same as or after {@code t2}.
+     */
+    public static boolean isAfterOrSame(final long t1, final long t2) {
+        return compareTimes(t1, t2) >= 0L;
     }
 
     public static long getGreatestTime(final long t1, final long t2) {

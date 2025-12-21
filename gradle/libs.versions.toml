@@ -1,7 +1,9 @@
 [versions]
 it-unimi-dsi-fastutil = "8.5.15"
 org-slf4j-slf4j-api = "2.0.17"
+net-java-dev-jna = "5.17.0"
 
 [libraries]
 it-unimi-dsi-fastutil = { module = "it.unimi.dsi:fastutil", version.ref = "it-unimi-dsi-fastutil" }
 org-slf4j-slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "org-slf4j-slf4j-api" }
+net-java-dev-jna = { module = "net.java.dev.jna:jna", version.ref = "net-java-dev-jna" }

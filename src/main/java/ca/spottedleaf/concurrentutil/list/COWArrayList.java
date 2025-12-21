@@ -15,6 +15,21 @@ public final class COWArrayList<E> {
         return this.array;
     }
 
+    public void clear() {
+        synchronized (this) {
+            this.array = Arrays.copyOf(this.array, 0);
+        }
+    }
+
+    public void set(final E[] array) {
+        if (array.getClass() != this.array.getClass()) {
+            throw new IllegalStateException();
+        }
+        synchronized (this) {
+            this.array = array;
+        }
+    }
+
     public boolean contains(final E test) {
         for (final E elem : this.array) {
             if (elem == test) {

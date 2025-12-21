@@ -7,9 +7,11 @@ import ca.spottedleaf.concurrentutil.util.Priority;
 import ca.spottedleaf.concurrentutil.util.TimeUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -19,23 +21,22 @@ public final class BalancedPrioritisedThreadPool {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BalancedPrioritisedThreadPool.class);
 
-    private final Consumer<Thread> threadModifier;
-
     private final COWArrayList<OrderedStreamGroup> groups = new COWArrayList<>(OrderedStreamGroup.class);
     private final COWArrayList<WorkerThread> threads = new COWArrayList<>(WorkerThread.class);
     private final COWArrayList<WorkerThread> aliveThreads = new COWArrayList<>(WorkerThread.class);
 
     private final long groupTimeSliceNS;
+    private final Consumer<Thread> threadModifier;
 
     private boolean shutdown;
 
     public BalancedPrioritisedThreadPool(final long groupTimeSliceNS, final Consumer<Thread> threadModifier) {
+        this.groupTimeSliceNS = groupTimeSliceNS;
         this.threadModifier = threadModifier;
 
         if (threadModifier == null) {
             throw new NullPointerException("Thread factory may not be null");
         }
-        this.groupTimeSliceNS = groupTimeSliceNS;
     }
 
     private void wakeupIdleThread() {
@@ -103,20 +104,29 @@ public final class BalancedPrioritisedThreadPool {
     }
 
     private boolean join(final long msToWait, final boolean interruptable) throws InterruptedException {
-        final long nsToWait = msToWait * (1000 * 1000);
+        synchronized (this) {
+            if (!this.shutdown) {
+                throw new IllegalStateException("Attempting to join on non-shutdown pool");
+            }
+        }
+
+        final long nsToWait = TimeUnit.MILLISECONDS.toNanos(msToWait);
         final long start = System.nanoTime();
         final long deadline = start + nsToWait;
         boolean interrupted = false;
         try {
             for (final WorkerThread thread : this.aliveThreads.getArray()) {
                 while (thread.isAlive()) {
-                    final long current = System.nanoTime();
-                    if (current - deadline >= 0L && msToWait > 0L) {
-                        return false;
-                    }
-
                     try {
-                        thread.join(msToWait <= 0L ? 0L : Math.max(1L, (deadline - current) / (1000 * 1000)));
+                        if (msToWait > 0L) {
+                            final long current = System.nanoTime();
+                            if (current - deadline >= 0L) {
+                                return false;
+                            }
+                            thread.join(Duration.ofNanos(deadline - current));
+                        } else {
+                            thread.join();
+                        }
                     } catch (final InterruptedException ex) {
                         if (interruptable) {
                             throw ex;

@@ -4,24 +4,32 @@ import ca.spottedleaf.concurrentutil.set.LinkedSortedSet;
 import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
 import ca.spottedleaf.concurrentutil.util.TimeUtil;
 import java.lang.invoke.VarHandle;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
+import java.util.List;
 import java.util.PriorityQueue;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
-import java.util.function.BooleanSupplier;
 
 /**
- * @deprecated To be replaced by {@link ScheduledTaskThreadPool}
+ * Scheduler thread pool implementation that uses EDF scheduling.
+ * <p>
+ *     Intermediate task execution is not supported in this scheduler.
+ * </p>
+ * <p>
+ *     NUMA aware scheduling is not supported in this scheduler.
+ * </p>
  */
-@Deprecated
-public final class SchedulerThreadPool {
+public final class EDFSchedulerThreadPool extends Scheduler {
 
-    public static final long DEADLINE_NOT_SET = Long.MIN_VALUE;
+    private static final Comparator<ScheduledState> TICK_COMPARATOR_BY_TIME = (final ScheduledState s1, final ScheduledState s2) -> {
+        final SchedulableTick t1 = s1.tick;
+        final SchedulableTick t2 = s2.tick;
 
-    private static final Comparator<SchedulableTick> TICK_COMPARATOR_BY_TIME = (final SchedulableTick t1, final SchedulableTick t2) -> {
         final int timeCompare = TimeUtil.compareTimes(t1.scheduledStart, t2.scheduledStart);
         if (timeCompare != 0) {
             return timeCompare;
@@ -32,8 +40,8 @@ public final class SchedulerThreadPool {
 
     private final TickThreadRunner[] runners;
     private final Thread[] threads;
-    private final LinkedSortedSet<SchedulableTick> awaiting = new LinkedSortedSet<>(TICK_COMPARATOR_BY_TIME);
-    private final PriorityQueue<SchedulableTick> queued = new PriorityQueue<>(TICK_COMPARATOR_BY_TIME);
+    private final LinkedSortedSet<ScheduledState> awaiting = new LinkedSortedSet<>(TICK_COMPARATOR_BY_TIME);
+    private final PriorityQueue<ScheduledState> queued = new PriorityQueue<>(TICK_COMPARATOR_BY_TIME);
     private final BitSet idleThreads;
 
     private final Object scheduleLock = new Object();
@@ -47,7 +55,7 @@ public final class SchedulerThreadPool {
      * @param threadFactory Specified thread factory
      * @see #start()
      */
-    public SchedulerThreadPool(final int threads, final ThreadFactory threadFactory) {
+    public EDFSchedulerThreadPool(final int threads, final ThreadFactory threadFactory) {
         final BitSet idleThreads = new BitSet(threads);
         for (int i = 0; i < threads; ++i) {
             idleThreads.set(i);
@@ -74,41 +82,62 @@ public final class SchedulerThreadPool {
         }
     }
 
-    /**
-     * Attempts to prevent further execution of tasks, optionally waiting for the scheduler threads to die.
-     *
-     * @param sync Whether to wait for the scheduler threads to die.
-     * @param maxWaitNS The maximum time, in ns, to wait for the scheduler threads to die.
-     * @return {@code true} if sync was false, or if sync was true and the scheduler threads died before the timeout.
-     *          Otherwise, returns {@code false} if the time elapsed exceeded the maximum wait time.
-     */
-    public boolean halt(final boolean sync, final long maxWaitNS) {
+    @Override
+    public void halt() {
         this.halted = true;
         for (final Thread thread : this.threads) {
             // force response to halt
             LockSupport.unpark(thread);
         }
-        final long time = System.nanoTime();
-        if (sync) {
-            // start at 10 * 0.5ms -> 5ms
-            for (long failures = 9L;; failures = ConcurrentUtil.linearLongBackoff(failures, 500_000L, 50_000_000L)) {
-                boolean allDead = true;
-                for (final Thread thread : this.threads) {
-                    if (thread.isAlive()) {
-                        allDead = false;
-                        break;
+    }
+
+    @Override
+    public boolean join(final long msToWait) {
+        try {
+            return this.join(msToWait, false);
+        } catch (final InterruptedException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    @Override
+    public boolean joinInterruptable(final long msToWait) throws InterruptedException {
+        return this.join(msToWait, true);
+    }
+
+    private boolean join(final long msToWait, final boolean interruptable) throws InterruptedException {
+        final long nsToWait = TimeUnit.MILLISECONDS.toNanos(msToWait);
+        final long start = System.nanoTime();
+        final long deadline = start + nsToWait;
+        boolean interrupted = false;
+        try {
+            for (final Thread thread : this.threads) {
+                while (thread.isAlive()) {
+                    try {
+                        if (msToWait > 0L) {
+                            final long current = System.nanoTime();
+                            if (current - deadline >= 0L) {
+                                return false;
+                            }
+                            thread.join(Duration.ofNanos(deadline - current));
+                        } else {
+                            thread.join();
+                        }
+                    } catch (final InterruptedException ex) {
+                        if (interruptable) {
+                            throw ex;
+                        }
+                        interrupted = true;
                     }
                 }
-                if (allDead) {
-                    return true;
-                }
-                if ((System.nanoTime() - time) >= maxWaitNS) {
-                    return false;
-                }
+            }
+
+            return true;
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
             }
         }
-
-        return true;
     }
 
     /**
@@ -118,7 +147,24 @@ public final class SchedulerThreadPool {
         return this.threads.clone();
     }
 
-    private void insertFresh(final SchedulableTick task) {
+    @Override
+    public Thread[] getCoreThreads() {
+        return this.getThreads();
+    }
+
+    @Override
+    public Thread[] getAliveThreads() {
+        final List<Thread> ret = new ArrayList<>(this.threads.length);
+        for (final Thread thread : this.threads) {
+            if (thread.isAlive()) {
+                ret.add(thread);
+            }
+        }
+
+        return ret.toArray(new Thread[0]);
+    }
+
+    private void insertFresh(final ScheduledState task) {
         final TickThreadRunner[] runners = this.runners;
 
         final int firstIdleThread = this.idleThreads.nextSetBit(0);
@@ -133,7 +179,7 @@ public final class SchedulerThreadPool {
         }
 
         // try to replace the last awaiting task
-        final SchedulableTick last = this.awaiting.last();
+        final ScheduledState last = this.awaiting.last();
 
         if (last != null && TICK_COMPARATOR_BY_TIME.compare(task, last) < 0) {
             // need to replace the last task
@@ -153,18 +199,18 @@ public final class SchedulerThreadPool {
         this.queued.add(task);
     }
 
-    private void takeTask(final TickThreadRunner runner, final SchedulableTick tick) {
+    private void takeTask(final TickThreadRunner runner, final ScheduledState tick) {
         if (!this.awaiting.remove(tick.awaitingLink)) {
             throw new IllegalStateException("Task is not in awaiting");
         }
         tick.awaitingLink = null;
     }
 
-    private SchedulableTick returnTask(final TickThreadRunner runner, final SchedulableTick reschedule) {
+    private ScheduledState returnTask(final TickThreadRunner runner, final ScheduledState reschedule) {
         if (reschedule != null) {
             this.queued.add(reschedule);
         }
-        final SchedulableTick ret = this.queued.poll();
+        final ScheduledState ret = this.queued.poll();
         if (ret == null) {
             this.idleThreads.set(runner.id);
         } else {
@@ -174,21 +220,21 @@ public final class SchedulerThreadPool {
         return ret;
     }
 
-    /**
-     * Schedules the specified task to be executed on this thread pool.
-     * @param task Specified task
-     * @throws IllegalStateException If the task is already scheduled
-     * @see SchedulableTick
-     */
+    @Override
     public void schedule(final SchedulableTick task) {
         synchronized (this.scheduleLock) {
-            if (!task.tryMarkScheduled()) {
+            final ScheduledState state = new ScheduledState(task);
+            if (!task.setState(state)) {
                 throw new IllegalStateException("Task " + task + " is already scheduled or cancelled");
             }
 
-            task.schedulerOwnedBy = this;
+            if (!state.tryMarkScheduled()) {
+                throw new IllegalStateException();
+            }
 
-            this.insertFresh(task);
+            state.schedulerOwnedBy = this;
+
+            this.insertFresh(state);
         }
     }
 
@@ -199,13 +245,13 @@ public final class SchedulerThreadPool {
      * @param task Specified task
      * @param newStart Specified new start
      */
-    public boolean updateTickStartToMax(final SchedulableTick task, final long newStart) {
+    public boolean updateTickStartToMax(final ScheduledState task, final long newStart) {
         synchronized (this.scheduleLock) {
-            if (TimeUtil.compareTimes(newStart, task.getScheduledStart()) <= 0) {
+            if (TimeUtil.compareTimes(newStart, task.tick.getScheduledStart()) <= 0) {
                 return false;
             }
             if (this.queued.remove(task)) {
-                task.setScheduledStart(newStart);
+                task.tick.setScheduledStart(newStart);
                 this.queued.add(task);
                 return true;
             }
@@ -214,12 +260,12 @@ public final class SchedulerThreadPool {
                 task.awaitingLink = null;
 
                 // re-queue task
-                task.setScheduledStart(newStart);
+                task.tick.setScheduledStart(newStart);
                 this.queued.add(task);
 
                 // now we need to replace the task the runner was waiting for
                 final TickThreadRunner runner = task.ownedBy;
-                final SchedulableTick replace = this.queued.poll();
+                final ScheduledState replace = this.queued.poll();
 
                 // replace cannot be null, since we have added a task to queued
                 if (replace != task) {
@@ -233,26 +279,27 @@ public final class SchedulerThreadPool {
         }
     }
 
-    /**
-     * Returns {@code null} if the task is not scheduled, returns {@code TRUE} if the task was cancelled
-     * and was queued to execute, returns {@code FALSE} if the task was cancelled but was executing.
-     */
-    public Boolean tryRetire(final SchedulableTick task) {
-        if (task.schedulerOwnedBy != this) {
-            return null;
+    @Override
+    public boolean cancel(final SchedulableTick task) {
+        if (!(task.state instanceof ScheduledState state)) {
+            return false;
+        }
+
+        if (state.schedulerOwnedBy != this) {
+            return false;
         }
 
         synchronized (this.scheduleLock) {
-            if (this.queued.remove(task)) {
+            if (this.queued.remove(state)) {
                 // cancelled, and no runner owns it - so return
-                return Boolean.TRUE;
+                return true;
             }
-            if (task.awaitingLink != null) {
-                this.awaiting.remove(task.awaitingLink);
-                task.awaitingLink = null;
+            if (state.awaitingLink != null) {
+                this.awaiting.remove(state.awaitingLink);
+                state.awaitingLink = null;
                 // here we need to replace the task the runner was waiting for
-                final TickThreadRunner runner = task.ownedBy;
-                final SchedulableTick replace = this.queued.poll();
+                final TickThreadRunner runner = state.ownedBy;
+                final ScheduledState replace = this.queued.poll();
 
                 if (replace == null) {
                     // nothing to replace with, set to idle
@@ -262,62 +309,35 @@ public final class SchedulerThreadPool {
                     runner.replaceTask(replace);
                 }
 
-                return Boolean.TRUE;
+                return true;
             }
 
             // could not find it in queue
-            return task.tryMarkCancelled() ? Boolean.FALSE : null;
+            return false;
         }
     }
 
-    /**
-     * Indicates that intermediate tasks are available to be executed by the task.
-     * <p>
-     * Note: currently a no-op
-     * </p>
-     * @param task The specified task
-     * @see SchedulableTick
-     */
+    @Override
     public void notifyTasks(final SchedulableTick task) {
         // Not implemented
     }
 
-    /**
-     * Represents a tickable task that can be scheduled into a {@link SchedulerThreadPool}.
-     * <p>
-     * A tickable task is expected to run on a fixed interval, which is determined by
-     * the {@link SchedulerThreadPool}.
-     * </p>
-     * <p>
-     * A tickable task can have intermediate tasks that can be executed before its tick method is ran. Instead of
-     * the {@link SchedulerThreadPool} parking in-between ticks, the scheduler will instead drain
-     * intermediate tasks from scheduled tasks. The parsing of intermediate tasks allows the scheduler to take
-     * advantage of downtime to reduce the intermediate task load from tasks once they begin ticking.
-     * </p>
-     * <p>
-     * It is guaranteed that {@link #runTick()} and {@link #runTasks(BooleanSupplier)} are never
-     * invoked in parallel.
-     * It is required that when intermediate tasks are scheduled, that {@link SchedulerThreadPool#notifyTasks(SchedulableTick)}
-     * is invoked for any scheduled task - otherwise, {@link #runTasks(BooleanSupplier)} may not be invoked to
-     * parse intermediate tasks.
-     * </p>
-     * @deprecated To be replaced by {@link ScheduledTaskThreadPool.SchedulableTick}
-     */
-    @Deprecated
-    public static abstract class SchedulableTick {
-        private static final AtomicLong ID_GENERATOR = new AtomicLong();
-        public final long id = ID_GENERATOR.getAndIncrement();
+    private static final class ScheduledState {
+        private final SchedulableTick tick;
 
         private static final int SCHEDULE_STATE_NOT_SCHEDULED = 0;
         private static final int SCHEDULE_STATE_SCHEDULED = 1;
         private static final int SCHEDULE_STATE_CANCELLED = 2;
 
         private final AtomicInteger scheduled = new AtomicInteger();
-        private SchedulerThreadPool schedulerOwnedBy;
-        private long scheduledStart = DEADLINE_NOT_SET;
+        private EDFSchedulerThreadPool schedulerOwnedBy;
         private TickThreadRunner ownedBy;
 
-        private LinkedSortedSet.Link<SchedulableTick> awaitingLink;
+        private LinkedSortedSet.Link<ScheduledState> awaitingLink;
+
+        private ScheduledState(final SchedulableTick tick) {
+            this.tick = tick;
+        }
 
         private boolean tryMarkScheduled() {
             return this.scheduled.compareAndSet(SCHEDULE_STATE_NOT_SCHEDULED, SCHEDULE_STATE_SCHEDULED);
@@ -329,48 +349,6 @@ public final class SchedulerThreadPool {
 
         private boolean isScheduled() {
             return this.scheduled.get() == SCHEDULE_STATE_SCHEDULED;
-        }
-
-        protected final long getScheduledStart() {
-            return this.scheduledStart;
-        }
-
-        /**
-         * If this task is scheduled, then this may only be invoked during {@link #runTick()},
-         * and {@link #runTasks(BooleanSupplier)}
-         */
-        protected final void setScheduledStart(final long value) {
-            this.scheduledStart = value;
-        }
-
-        /**
-         * Executes the tick.
-         * <p>
-         * It is the callee's responsibility to invoke {@link #setScheduledStart(long)} to adjust the start of
-         * the next tick.
-         * </p>
-         * @return {@code true} if the task should continue to be scheduled, {@code false} otherwise.
-         */
-        public abstract boolean runTick();
-
-        /**
-         * Returns whether this task has any intermediate tasks that can be executed.
-         */
-        public abstract boolean hasTasks();
-
-        /**
-         * Returns {@code null} if this task should not be scheduled, otherwise returns
-         * {@code Boolean.TRUE} if there are more intermediate tasks to execute and
-         * {@code Boolean.FALSE} if there are no more intermediate tasks to execute.
-         */
-        public abstract Boolean runTasks(final BooleanSupplier canContinue);
-
-        @Override
-        public String toString() {
-            return "SchedulableTick:{" +
-                    "class=" + this.getClass().getName() + "," +
-                    "scheduled_state=" + this.scheduled.get() + ","
-                    + "}";
         }
     }
 
@@ -401,7 +379,7 @@ public final class SchedulerThreadPool {
         private static final int STATE_EXECUTING_TICK = 2;
 
         public final int id;
-        public final SchedulerThreadPool scheduler;
+        public final EDFSchedulerThreadPool scheduler;
 
         private volatile Thread thread;
         private volatile TickThreadRunnerState state = new TickThreadRunnerState(null, STATE_IDLE);
@@ -419,9 +397,9 @@ public final class SchedulerThreadPool {
             STATE_HANDLE.setVolatile(this, state);
         }
 
-        private static record TickThreadRunnerState(SchedulableTick stateTarget, int state) {}
+        private static record TickThreadRunnerState(ScheduledState stateTarget, int state) {}
 
-        public TickThreadRunner(final int id, final SchedulerThreadPool scheduler) {
+        public TickThreadRunner(final int id, final EDFSchedulerThreadPool scheduler) {
             this.id = id;
             this.scheduler = scheduler;
         }
@@ -430,7 +408,7 @@ public final class SchedulerThreadPool {
             return this.thread;
         }
 
-        private void acceptTask(final SchedulableTick task) {
+        private void acceptTask(final ScheduledState task) {
             if (task.ownedBy != null) {
                 throw new IllegalStateException("Already owned by another runner");
             }
@@ -443,7 +421,7 @@ public final class SchedulerThreadPool {
             LockSupport.unpark(this.getRunnerThread());
         }
 
-        private void replaceTask(final SchedulableTick task) {
+        private void replaceTask(final ScheduledState task) {
             final TickThreadRunnerState state = this.state;
             if (state.state != STATE_AWAITING_TICK) {
                 throw new IllegalStateException("Cannot replace task in state " + state);
@@ -469,7 +447,7 @@ public final class SchedulerThreadPool {
             // no need to unpark
         }
 
-        private boolean takeTask(final TickThreadRunnerState state, final SchedulableTick task) {
+        private boolean takeTask(final TickThreadRunnerState state, final ScheduledState task) {
             synchronized (this.scheduler.scheduleLock) {
                 if (this.state != state) {
                     return false;
@@ -480,11 +458,11 @@ public final class SchedulerThreadPool {
             }
         }
 
-        private void returnTask(final SchedulableTick task, final boolean reschedule) {
+        private void returnTask(final ScheduledState task, final boolean reschedule) {
             synchronized (this.scheduler.scheduleLock) {
                 task.ownedBy = null;
 
-                final SchedulableTick newWait = this.scheduler.returnTask(this, reschedule && task.isScheduled() ? task : null);
+                final ScheduledState newWait = this.scheduler.returnTask(this, reschedule && task.isScheduled() ? task : null);
                 if (newWait == null) {
                     this.setStatePlain(new TickThreadRunnerState(null, STATE_IDLE));
                 } else {
@@ -505,7 +483,7 @@ public final class SchedulerThreadPool {
             for (;;) {
                 final TickThreadRunnerState startState = this.state;
                 final int startStateType = startState.state;
-                final SchedulableTick startStateTask =  startState.stateTarget;
+                final ScheduledState startStateTask =  startState.stateTarget;
 
                 if (this.scheduler.halted) {
                     return;
@@ -524,7 +502,7 @@ public final class SchedulerThreadPool {
                     }
 
                     case STATE_AWAITING_TICK: {
-                        final long deadline = startStateTask.getScheduledStart();
+                        final long deadline = startStateTask.tick.getScheduledStart();
                         for (;;) {
                             if (this.state != startState) {
                                 continue main_state_loop;
@@ -545,7 +523,7 @@ public final class SchedulerThreadPool {
                         }
 
                         // TODO exception handling
-                        final boolean reschedule = startStateTask.runTick();
+                        final boolean reschedule = startStateTask.tick.runTick();
 
                         this.returnTask(startStateTask, reschedule);
 
