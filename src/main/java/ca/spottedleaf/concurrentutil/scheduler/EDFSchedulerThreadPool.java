@@ -2,6 +2,7 @@ package ca.spottedleaf.concurrentutil.scheduler;
 
 import ca.spottedleaf.concurrentutil.set.LinkedSortedSet;
 import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
+import ca.spottedleaf.concurrentutil.util.LazyRunnable;
 import ca.spottedleaf.concurrentutil.util.TimeUtil;
 import java.lang.invoke.VarHandle;
 import java.time.Duration;
@@ -65,8 +66,10 @@ public final class EDFSchedulerThreadPool extends Scheduler {
         final TickThreadRunner[] runners = new TickThreadRunner[threads];
         final Thread[] t = new Thread[threads];
         for (int i = 0; i < threads; ++i) {
-            runners[i] = new TickThreadRunner(i, this);
-            t[i] = threadFactory.newThread(runners[i]);
+            final LazyRunnable run = new LazyRunnable();
+            final Thread thread = t[i] = threadFactory.newThread(run);
+
+            run.setRunnable(runners[i] = new TickThreadRunner(thread, i, this));
         }
 
         this.threads = t;
@@ -378,10 +381,10 @@ public final class EDFSchedulerThreadPool extends Scheduler {
          */
         private static final int STATE_EXECUTING_TICK = 2;
 
+        private final Thread thread;
         public final int id;
         public final EDFSchedulerThreadPool scheduler;
 
-        private volatile Thread thread;
         private volatile TickThreadRunnerState state = new TickThreadRunnerState(null, STATE_IDLE);
         private static final VarHandle STATE_HANDLE = ConcurrentUtil.getVarHandle(TickThreadRunner.class, "state", TickThreadRunnerState.class);
 
@@ -399,7 +402,8 @@ public final class EDFSchedulerThreadPool extends Scheduler {
 
         private static record TickThreadRunnerState(ScheduledState stateTarget, int state) {}
 
-        public TickThreadRunner(final int id, final EDFSchedulerThreadPool scheduler) {
+        public TickThreadRunner(final Thread thread, final int id, final EDFSchedulerThreadPool scheduler) {
+            this.thread = thread;
             this.id = id;
             this.scheduler = scheduler;
         }
@@ -477,8 +481,6 @@ public final class EDFSchedulerThreadPool extends Scheduler {
 
         @Override
         public void run() {
-            this.thread = Thread.currentThread();
-
             main_state_loop:
             for (;;) {
                 final TickThreadRunnerState startState = this.state;

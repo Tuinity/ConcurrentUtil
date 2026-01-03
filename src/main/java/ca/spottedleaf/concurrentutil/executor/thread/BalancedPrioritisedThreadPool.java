@@ -1,23 +1,31 @@
 package ca.spottedleaf.concurrentutil.executor.thread;
 
 import ca.spottedleaf.concurrentutil.executor.PrioritisedExecutor;
+import ca.spottedleaf.concurrentutil.executor.QueueExecutorRunnable;
 import ca.spottedleaf.concurrentutil.executor.queue.PrioritisedTaskQueue;
 import ca.spottedleaf.concurrentutil.list.COWArrayList;
+import ca.spottedleaf.concurrentutil.util.LazyRunnable;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import ca.spottedleaf.concurrentutil.util.TimeUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 public final class BalancedPrioritisedThreadPool {
 
     public static final long DEFAULT_GROUP_TIME_SLICE = (long)(15.0e6); // 15ms
+
+    /**
+     * Whether to order tasks by (lower) stream id after (higher) priority
+     */
+    public static final long FLAG_ORDER_BY_STREAM = 1L << 0;
+
+    public static final long DEFAULT_FLAGS = 0L;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BalancedPrioritisedThreadPool.class);
 
@@ -26,15 +34,22 @@ public final class BalancedPrioritisedThreadPool {
     private final COWArrayList<WorkerThread> aliveThreads = new COWArrayList<>(WorkerThread.class);
 
     private final long groupTimeSliceNS;
-    private final Consumer<Thread> threadModifier;
+    private final ThreadFactory threadFactory;
 
     private boolean shutdown;
 
-    public BalancedPrioritisedThreadPool(final long groupTimeSliceNS, final Consumer<Thread> threadModifier) {
-        this.groupTimeSliceNS = groupTimeSliceNS;
-        this.threadModifier = threadModifier;
+    private final long flags;
 
-        if (threadModifier == null) {
+    public BalancedPrioritisedThreadPool(final long groupTimeSliceNS, final ThreadFactory threadFactory) {
+        this(groupTimeSliceNS, threadFactory, DEFAULT_FLAGS);
+    }
+
+    public BalancedPrioritisedThreadPool(final long groupTimeSliceNS, final ThreadFactory threadFactory, final long flags) {
+        this.flags = flags;
+        this.groupTimeSliceNS = groupTimeSliceNS;
+        this.threadFactory = threadFactory;
+
+        if (threadFactory == null) {
             throw new NullPointerException("Thread factory may not be null");
         }
     }
@@ -47,16 +62,23 @@ public final class BalancedPrioritisedThreadPool {
         }
     }
 
-    public Thread[] getAliveThreads() {
-        final WorkerThread[] threads = this.aliveThreads.getArray();
+    private static Thread[] getThreads(final COWArrayList<WorkerThread> workers) {
+        final WorkerThread[] array = workers.getArray();
+        final Thread[] ret = new Thread[array.length];
 
-        return Arrays.copyOf(threads, threads.length, Thread[].class);
+        for (int i = 0; i < array.length; ++i) {
+            ret[i] = array[i].thread;
+        }
+
+        return ret;
+    }
+
+    public Thread[] getAliveThreads() {
+        return getThreads(this.aliveThreads);
     }
 
     public Thread[] getCoreThreads() {
-        final WorkerThread[] threads = this.threads.getArray();
-
-        return Arrays.copyOf(threads, threads.length, Thread[].class);
+        return getThreads(this.threads);
     }
 
     /**
@@ -116,16 +138,16 @@ public final class BalancedPrioritisedThreadPool {
         boolean interrupted = false;
         try {
             for (final WorkerThread thread : this.aliveThreads.getArray()) {
-                while (thread.isAlive()) {
+                while (thread.thread.isAlive()) {
                     try {
                         if (msToWait > 0L) {
                             final long current = System.nanoTime();
                             if (current - deadline >= 0L) {
                                 return false;
                             }
-                            thread.join(Duration.ofNanos(deadline - current));
+                            thread.thread.join(Duration.ofNanos(deadline - current));
                         } else {
-                            thread.join();
+                            thread.thread.join();
                         }
                     } catch (final InterruptedException ex) {
                         if (interruptable) {
@@ -199,13 +221,14 @@ public final class BalancedPrioritisedThreadPool {
             } else {
                 // we need to add threads
                 for (int i = 0, difference = threads - currentThreads.length; i < difference; ++i) {
-                    final WorkerThread thread = new WorkerThread();
+                    final LazyRunnable run = new LazyRunnable();
+                    final WorkerThread thread = new WorkerThread(this.threadFactory.newThread(run));
 
-                    this.threadModifier.accept(thread);
+                    run.setRunnable(thread);
                     this.aliveThreads.add(thread);
                     this.threads.add(thread);
 
-                    thread.start();
+                    thread.thread.start();
                 }
             }
         }
@@ -225,7 +248,7 @@ public final class BalancedPrioritisedThreadPool {
                 throw new IllegalStateException("Queue is shutdown");
             }
 
-            final OrderedStreamGroup ret = new OrderedStreamGroup(subOrderGenerate);
+            final OrderedStreamGroup ret = new OrderedStreamGroup(subOrderGenerate, (this.flags & FLAG_ORDER_BY_STREAM) != 0L);
 
             this.groups.add(ret);
 
@@ -289,13 +312,15 @@ public final class BalancedPrioritisedThreadPool {
     public final class OrderedStreamGroup {
 
         private final AtomicLong subOrderGenerator;
+        private final boolean streamCompare;
         private final COWArrayList<Queue> queues = new COWArrayList<>(Queue.class);
 
         private int currentParallelism;
         private long lastRetrieved = System.nanoTime();
 
-        public OrderedStreamGroup(final AtomicLong subOrderGenerator) {
+        public OrderedStreamGroup(final AtomicLong subOrderGenerator, final boolean streamCompare) {
             this.subOrderGenerator = subOrderGenerator;
+            this.streamCompare = streamCompare;
         }
 
         public boolean hasAnyTasks() {
@@ -335,7 +360,7 @@ public final class BalancedPrioritisedThreadPool {
                 while ((first = queue.peekFirst()) != null && (state = first.getPriorityState()) == null);
 
                 if (first != null) {
-                    if (highestPriority == null || state.compareTo(highestPriority) < 0) {
+                    if (highestPriority == null || (this.streamCompare ? state.compareToUsingStream(highestPriority) : state.compareTo(highestPriority)) < 0) {
                         highestTask = first;
                         highestPriority = state;
                     }
@@ -354,7 +379,7 @@ public final class BalancedPrioritisedThreadPool {
                     throw new IllegalStateException("Queue is shutdown");
                 }
 
-                final Queue ret = new Queue(this.subOrderGenerator);
+                final Queue ret = new Queue(this.subOrderGenerator, this.streamCompare);
 
                 this.queues.add(ret);
 
@@ -368,8 +393,11 @@ public final class BalancedPrioritisedThreadPool {
             private volatile boolean halt;
             private final AtomicLong executors = new AtomicLong();
 
-            public Queue(final AtomicLong subOrderGenerator) {
-                this.wrapped = new PrioritisedTaskQueue(subOrderGenerator);
+            public Queue(final AtomicLong subOrderGenerator, final boolean streamCompare) {
+                this.wrapped = new PrioritisedTaskQueue(
+                        subOrderGenerator,
+                        streamCompare ? PrioritisedTaskQueue.FLAG_ORDER_BY_STREAM : 0L
+                );
             }
 
             /**
@@ -569,10 +597,10 @@ public final class BalancedPrioritisedThreadPool {
         }
     }
 
-    private final class WorkerThread extends PrioritisedQueueExecutorThread {
+    private final class WorkerThread extends QueueExecutorRunnable {
 
-        public WorkerThread() {
-            super(null);
+        public WorkerThread(final Thread thread) {
+            super(thread, null);
         }
 
         @Override
@@ -605,7 +633,7 @@ public final class BalancedPrioritisedThreadPool {
                         }
                         ret = true;
                     } catch (final Throwable throwable) {
-                        LOGGER.error("Exception thrown from thread '" + this.getName(), throwable);
+                        LOGGER.error("Exception thrown from thread '" + this.thread.getName(), throwable);
                     }
                 } while (System.nanoTime() - deadline <= 0L);
 

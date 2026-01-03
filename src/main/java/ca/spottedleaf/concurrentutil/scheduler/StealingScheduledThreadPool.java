@@ -3,6 +3,7 @@ package ca.spottedleaf.concurrentutil.scheduler;
 import ca.spottedleaf.concurrentutil.list.COWArrayList;
 import ca.spottedleaf.concurrentutil.numa.OSNuma;
 import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
+import ca.spottedleaf.concurrentutil.util.LazyRunnable;
 import ca.spottedleaf.concurrentutil.util.TimeUtil;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -116,12 +117,9 @@ public final class StealingScheduledThreadPool extends Scheduler {
             final NodeThreads nodeThreads = new NodeThreads(runners, node);
 
             for (int i = 0; i < threads; ++i) {
-                final TickThreadRunner[] runner = new TickThreadRunner[1];
-                final Runnable run = () -> {
-                    runner[0].run();
-                };
+                final LazyRunnable run = new LazyRunnable();
 
-                runners[i] = runner[0] = new TickThreadRunner(this.threadFactory.newThread(run), this, nodeThreads, nodes);
+                run.setRunnable(runners[i] = new TickThreadRunner(this.threadFactory.newThread(run), this, nodeThreads, nodes));
                 newRunners.add(runners[i]);
                 this.aliveThreads.add(runners[i]);
             }

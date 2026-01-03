@@ -310,5 +310,19 @@ public interface PrioritisedExecutor {
 
             return Long.compare(this.subOrder, other.subOrder);
         }
+
+        public int compareToUsingStream(final PriorityState other) {
+            final int streamCompare = Long.compare(this.stream, other.stream);
+            if (streamCompare != 0) {
+                return streamCompare;
+            }
+
+            final int priorityCompare = this.priority.priority - other.priority.priority;
+            if (priorityCompare != 0) {
+                return priorityCompare;
+            }
+
+            return Long.compare(this.subOrder, other.subOrder);
+        }
     }
 }
