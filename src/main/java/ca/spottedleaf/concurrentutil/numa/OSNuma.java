@@ -129,7 +129,11 @@ public interface OSNuma {
     public default void setCurrentNumaAffinity(final int[] numaNodes) {
         final IntArrayList cores = new IntArrayList();
         for (final int node : numaNodes) {
-            cores.addAll(IntArrayList.wrap(this.getCores(node)));
+            final int[] nodeCores = this.getCores(node);
+            if (nodeCores == null) {
+                throw new IllegalArgumentException("Unknown NUMA node: " + node);
+            }
+            cores.addAll(IntArrayList.wrap(nodeCores));
         }
 
         this.setCurrentThreadAffinity(FlatBitsetUtil.intsToBitset(cores.toIntArray()));
@@ -151,7 +155,12 @@ public interface OSNuma {
             }
 
             for (int core = 0; core < coreToNuma.length; ++core) {
-                numaToCore[coreToNuma[core]].add(core);
+                final int node = coreToNuma[core];
+                if (node < 0 || node >= numaToCore.length) {
+                    // unknown mapping, ignore
+                    continue;
+                }
+                numaToCore[node].add(core);
             }
 
             this.numaToCore = new int[this.costArray.length][];
@@ -195,7 +204,12 @@ public interface OSNuma {
                 // cannot determine
                 return -1;
             }
-            return this.coreToNuma[coreId];
+            final int node = this.coreToNuma[coreId];
+            if (node < 0 || node >= this.costArray.length) {
+                // cannot determine
+                return -1;
+            }
+            return node;
         }
 
         @Override
@@ -214,7 +228,7 @@ public interface OSNuma {
 
         @Override
         public int getCurrentNumaNode() {
-            return this.coreToNuma[this.getCurrentCore()];
+            return this.getNumaNode(this.getCurrentCore());
         }
     }
 
