@@ -56,8 +56,8 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
                             // it is set, so mark it in the core mapping
                             if (coreToNuma.length <= cpu) {
                                 coreToNuma = Arrays.copyOf(coreToNuma, cpu + 1);
-                                coreToNuma[cpu] = node;
                             }
+                            coreToNuma[cpu] = node;
                         }
                     }
 
