@@ -25,52 +25,52 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
     }
     public static final LinuxNuma INSTANCE;
     static {
-        if (!LIBRARIES_AVAILABLE) {
-            INSTANCE = null;
-        } else {
+        LinuxNuma instance = null;
+        if (LIBRARIES_AVAILABLE) {
             final int totalNumaNodes = LibNuma.numa_max_node() + 1;
 
             final Pointer cpuMask = LibNuma.numa_allocate_cpumask();
             try {
-                if (cpuMask == null) {
-                    INSTANCE = null;
-                } else {
+                if (cpuMask != null) {
                     final int totalCpus = LibNuma.numa_num_possible_cpus();
+                    if (totalCpus > 0) {
+                        final int[] coreToNuma = new int[totalCpus];
+                        Arrays.fill(coreToNuma, -1);
 
-                    int[] coreToNuma = new int[0];
-                    for (int node = 0; node < totalNumaNodes; ++node) {
-                        LibNuma.numa_bitmask_clearall(cpuMask);
-                        final int res = LibNuma.numa_node_to_cpus(node, cpuMask);
-                        if (res != 0) {
-                            // failed
-                            coreToNuma = null;
-                            break;
-                        }
-
-                        for (int cpu = 0; cpu < totalCpus; ++cpu) {
-                            final int bit = LibNuma.numa_bitmask_isbitset(cpuMask, cpu);
-                            if (bit == 0) {
-                                // not set
-                                continue;
+                        boolean ok = true;
+                        for (int node = 0; node < totalNumaNodes; ++node) {
+                            LibNuma.numa_bitmask_clearall(cpuMask);
+                            final int res = LibNuma.numa_node_to_cpus(node, cpuMask);
+                            if (res != 0) {
+                                // failed to gather topology
+                                ok = false;
+                                break;
                             }
-                            // it is set, so mark it in the core mapping
-                            if (coreToNuma.length <= cpu) {
-                                coreToNuma = Arrays.copyOf(coreToNuma, cpu + 1);
+
+                            for (int cpu = 0; cpu < totalCpus; ++cpu) {
+                                final int bit = LibNuma.numa_bitmask_isbitset(cpuMask, cpu);
+                                if (bit == 0) {
+                                    // not set
+                                    continue;
+                                }
+                                // it is set, so mark it in the core mapping
                                 coreToNuma[cpu] = node;
                             }
                         }
-                    }
 
-                    final int[][] costArray = new int[totalNumaNodes][totalNumaNodes];
-                    for (int i = 0; i < totalNumaNodes; ++i) {
-                        for (int j = 0; j < totalNumaNodes; ++j) {
-                            final int dist = LibNuma.numa_distance(i, j);
-                            // distance is 0 when it cannot be determined
-                            costArray[i][j] = dist <= 0 ? 255 : dist;
+                        if (ok) {
+                            final int[][] costArray = new int[totalNumaNodes][totalNumaNodes];
+                            for (int i = 0; i < totalNumaNodes; ++i) {
+                                for (int j = 0; j < totalNumaNodes; ++j) {
+                                    final int dist = LibNuma.numa_distance(i, j);
+                                    // distance is 0 when it cannot be determined
+                                    costArray[i][j] = dist <= 0 ? 255 : dist;
+                                }
+                            }
+
+                            instance = new LinuxNuma(coreToNuma, costArray);
                         }
                     }
-
-                    INSTANCE = coreToNuma == null ? null : new LinuxNuma(coreToNuma, costArray);
                 }
             } finally {
                 if (cpuMask != null) {
@@ -78,6 +78,7 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
                 }
             }
         }
+        INSTANCE = instance;
     }
 
     private LinuxNuma(final int[] coreToNuma, final int[][] costArray) {
