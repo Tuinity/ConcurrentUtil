@@ -322,8 +322,8 @@ public final class EDFSchedulerThreadPool extends Scheduler {
                 return true;
             }
 
-            // the task may currently be running; cancellation is applied by state transition
-            return true;
+            // could not find it in queue
+            return false;
         }
     }
 
