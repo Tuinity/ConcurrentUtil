@@ -226,6 +226,10 @@ public final class EDFSchedulerThreadPool extends Scheduler {
     @Override
     public void schedule(final SchedulableTick task) {
         synchronized (this.scheduleLock) {
+            if (task.getScheduledStart() == TimeUtil.DEADLINE_NOT_SET) {
+                throw new IllegalStateException("Start must be set when scheduling");
+            }
+
             final ScheduledState state = new ScheduledState(task);
             if (!task.setState(state)) {
                 throw new IllegalStateException("Task " + task + " is already scheduled or cancelled");
@@ -284,15 +288,18 @@ public final class EDFSchedulerThreadPool extends Scheduler {
 
     @Override
     public boolean cancel(final SchedulableTick task) {
-        if (!(task.state instanceof ScheduledState state)) {
-            return false;
-        }
-
-        if (state.schedulerOwnedBy != this) {
+        if (!(task.getState() instanceof ScheduledState state)) {
             return false;
         }
 
         synchronized (this.scheduleLock) {
+            if (state.schedulerOwnedBy != this) {
+                return false;
+            }
+            if (!state.tryMarkCancelled()) {
+                return false;
+            }
+
             if (this.queued.remove(state)) {
                 // cancelled, and no runner owns it - so return
                 return true;

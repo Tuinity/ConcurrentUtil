@@ -32,7 +32,11 @@ public abstract class SchedulableTick {
 
     long scheduledStart = TimeUtil.DEADLINE_NOT_SET;
 
-    Object state;
+    private volatile Object state;
+
+    final Object getState() {
+        return this.state;
+    }
 
     boolean setState(final Object state) {
         synchronized (this) {
@@ -79,7 +83,7 @@ public abstract class SchedulableTick {
     public String toString() {
         return "SchedulableTick:{" +
                 "class=" + this.getClass().getName() + "," +
-                "state=" + this.state + ","
+                "state=" + this.getState() + ","
                 + "}";
     }
 }

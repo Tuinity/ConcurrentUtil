@@ -68,7 +68,7 @@ public final class StealingScheduledThreadPool extends Scheduler {
     }
 
     private static ScheduledState getState(final SchedulableTick tick) {
-        return (ScheduledState)tick.state;
+        return (ScheduledState)tick.getState();
     }
 
     private static Thread[] getThreads(final COWArrayList<TickThreadRunner> runners) {
@@ -274,7 +274,8 @@ public final class StealingScheduledThreadPool extends Scheduler {
             int selectedSize = Integer.MAX_VALUE;
 
             for (final NodeThreads node : nodes) {
-                final int distance = this.numa.getNumaDistance(currentNode, node.nodeNumber);
+                final int rawDistance = this.numa.getNumaDistance(currentNode, node.nodeNumber);
+                final int distance = rawDistance <= 0 ? Integer.MAX_VALUE : rawDistance;
                 if (distance > selectedDistance) {
                     continue;
                 }
@@ -298,7 +299,8 @@ public final class StealingScheduledThreadPool extends Scheduler {
             int selectedDistance = Integer.MAX_VALUE;
 
             for (final NodeThreads node : nodes) {
-                final int distance = this.numa.getNumaDistance(currentNode, node.nodeNumber);
+                final int rawDistance = this.numa.getNumaDistance(currentNode, node.nodeNumber);
+                final int distance = rawDistance <= 0 ? Integer.MAX_VALUE : rawDistance;
                 for (final TickThreadRunner runner : node.threads) {
                     // yes the size is just a rough guess...
                     final int size = runner.tickQueue.size();
@@ -350,14 +352,14 @@ public final class StealingScheduledThreadPool extends Scheduler {
 
     @Override
     public void notifyTasks(final SchedulableTick tick) {
-        if (tick.state instanceof ScheduledState state) {
+        if (tick.getState() instanceof ScheduledState state) {
             state.scheduleTasks();
         }
     }
 
     @Override
     public boolean cancel(final SchedulableTick tick) {
-        if (tick.state instanceof ScheduledState state) {
+        if (tick.getState() instanceof ScheduledState state) {
             return state.tryCancel();
         } else {
             return false;
@@ -915,7 +917,8 @@ public final class StealingScheduledThreadPool extends Scheduler {
             TickThreadRunner selectedRunner = null;
 
             for (final NodeThreads node : this.nodes) {
-                final int distance = this.scheduler.numa.getNumaDistance(this.node.nodeNumber, node.nodeNumber);
+                final int rawDistance = this.scheduler.numa.getNumaDistance(this.node.nodeNumber, node.nodeNumber);
+                final int distance = rawDistance <= 0 ? Integer.MAX_VALUE : rawDistance;
 
                 for (final TickThreadRunner runner : node.threads) {
                     if (runner == this) {
