@@ -1,4 +1,4 @@
-package ca.spottedleaf.concurrentutil.set;
+package ca.spottedleaf.concurrentutil.list;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;

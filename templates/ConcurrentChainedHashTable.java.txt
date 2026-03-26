@@ -1,22 +1,18 @@
-package ca.spottedleaf.concurrentutil.map;
+#include "template_concurrent_chained.txt"
 
-import ca.spottedleaf.concurrentutil.function.BiLong1Function;
-import ca.spottedleaf.concurrentutil.util.ConcurrentUtil;
-import ca.spottedleaf.concurrentutil.util.HashUtil;
-import ca.spottedleaf.concurrentutil.util.IntegerUtil;
-import ca.spottedleaf.concurrentutil.util.ThrowUtil;
+package PACKAGE;
+
+import ca.spottedleaf.concurrentutil.collection.iterator.*;
+import ca.spottedleaf.concurrentutil.map.BaseMapCollection;
+import ca.spottedleaf.concurrentutil.map.BaseMapSet;
+import ca.spottedleaf.concurrentutil.util.*;
 import java.lang.invoke.VarHandle;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.LongConsumer;
-import java.util.function.LongFunction;
-import java.util.function.Predicate;
+import java.util.function.*;
 
 /**
- * Concurrent hashtable implementation supporting mapping arbitrary {@code long} values onto non-null {@code Object}
+ * Concurrent hashtable implementation supporting mapping arbitrary non-null {@code KEY_TYPE} values onto non-null {@code VALUE_TYPE}
  * values with support for multiple writer and multiple reader threads.
  *
  * <h2>Happens-before relationship</h2>
@@ -28,35 +24,47 @@ import java.util.function.Predicate;
  * <h2>Atomicity of functional methods</h2>
  * <p>
  * Functional methods are functions declared in this class which possibly perform a write (remove, replace, or modify)
- * to an entry in this map as a result of invoking a function on an input parameter. For example, {@link #compute(long, BiLong1Function)},
- * {@link #merge(long, Object, BiFunction)} and {@link #removeIf(long, Predicate)} are examples of functional methods.
+ * to an entry in this map as a result of invoking a function on an input parameter.
  * Functional methods will be performed atomically, that is, the input parameter is guaranteed to only be invoked at most
- * once per function call. The consequence of this behavior however is that a critical lock for a bin entry is held, which
+ * once per function call. However, the consequence of this behaviour is that a critical lock for a bin entry is held, which
  * means that if the input parameter invocation makes additional calls to write into this hash table that the result
  * is undefined and deadlock-prone.
  * </p>
  *
- * @param <V>
+#if PRIMITIVE_KEY_TYPE == 0
+ * @param <K> The type for keys in this map
+#endif
+#if PRIMITIVE_VALUE_TYPE == 0
+ * @param <V> The type for values in this map
+#endif
  * @see java.util.concurrent.ConcurrentMap
  */
-public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<ConcurrentLong2ReferenceChainedHashTable.TableEntry<V>> {
+public class CLASS_TYPE(K,V) implements Iterable<CLASS_NAME.TABLE_ENTRY_TYPE(K,V)> {
 
-    private static final TableEntry<?> RESIZE_NODE = new TableEntry<>(0L, null);
+    private static final TABLE_ENTRY_TYPE(?,?) RESIZE_NODE = new TABLE_ENTRY_NAME_DIAMONDS(KEY_DEFAULT_VALUE, VALUE_DEFAULT_VALUE);
 
     protected static final int DEFAULT_CAPACITY = 16;
     protected static final float DEFAULT_LOAD_FACTOR = 0.75f;
     protected static final int MAXIMUM_CAPACITY = Integer.MIN_VALUE >>> 1;
 
+    public static int defaultCapacity() {
+        return DEFAULT_CAPACITY;
+    }
+
+    public static float defaultLoadFactor() {
+        return DEFAULT_LOAD_FACTOR;
+    }
+
     protected final AtomicLong size = new AtomicLong();
     protected final float loadFactor;
 
-    protected volatile TableEntry<V>[] table;
-    protected volatile TableEntry<V>[] nextTable;
+    protected volatile TABLE_ENTRY_TYPE(K,V)[] table;
+    protected volatile TABLE_ENTRY_TYPE(K,V)[] nextTable;
 
     protected static final int THRESHOLD_NO_RESIZE = -1;
     protected static final int THRESHOLD_RESIZING  = -2;
     protected volatile int threshold;
-    protected static final VarHandle THRESHOLD_HANDLE = ConcurrentUtil.getVarHandle(ConcurrentLong2ReferenceChainedHashTable.class, "threshold", int.class);
+    protected static final VarHandle THRESHOLD_HANDLE = ConcurrentUtil.getVarHandle(CLASS_NAME.class, "threshold", int.class);
 
     protected final int getThresholdAcquire() {
         return (int)THRESHOLD_HANDLE.getAcquire(this);
@@ -82,10 +90,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         return (int)THRESHOLD_HANDLE.compareAndExchange(this, expect, update);
     }
 
-    protected Values<V> values;
-    protected EntrySet<V> entrySet;
-
-    public ConcurrentLong2ReferenceChainedHashTable() {
+    public CLASS_NAME() {
         this(DEFAULT_CAPACITY, DEFAULT_LOAD_FACTOR);
     }
 
@@ -108,7 +113,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         return IntegerUtil.roundCeilLog2(capacity);
     }
 
-    protected ConcurrentLong2ReferenceChainedHashTable(final int capacity, final float loadFactor) {
+    protected CLASS_NAME(final int capacity, final float loadFactor) {
         final int tableSize = getCapacityFor(capacity);
 
         if (loadFactor <= 0.0 || !Float.isFinite(loadFactor)) {
@@ -123,22 +128,22 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
         this.loadFactor = loadFactor;
         // noinspection unchecked
-        this.nextTable = this.table = (TableEntry<V>[])new TableEntry[tableSize];
+        this.nextTable = this.table = (TABLE_ENTRY_TYPE(K,V)[])new TABLE_ENTRY_NAME[tableSize];
     }
 
-    public static <V> ConcurrentLong2ReferenceChainedHashTable<V> createWithCapacity(final int capacity) {
+    public static GENERIC_KEY_VALUE_TYPE(,K,V) CLASS_TYPE(K,V) createWithCapacity(final int capacity) {
         return createWithCapacity(capacity, DEFAULT_LOAD_FACTOR);
     }
 
-    public static <V> ConcurrentLong2ReferenceChainedHashTable<V> createWithCapacity(final int capacity, final float loadFactor) {
-        return new ConcurrentLong2ReferenceChainedHashTable<>(capacity, loadFactor);
+    public static GENERIC_KEY_VALUE_TYPE(,K,V) CLASS_TYPE(K,V) createWithCapacity(final int capacity, final float loadFactor) {
+        return new CLASS_NAME_DIAMONDS(capacity, loadFactor);
     }
 
-    public static <V> ConcurrentLong2ReferenceChainedHashTable<V> createWithExpected(final int expected) {
+    public static GENERIC_KEY_VALUE_TYPE(,K,V) CLASS_TYPE(K,V) createWithExpected(final int expected) {
         return createWithExpected(expected, DEFAULT_LOAD_FACTOR);
     }
 
-    public static <V> ConcurrentLong2ReferenceChainedHashTable<V> createWithExpected(final int expected, final float loadFactor) {
+    public static GENERIC_KEY_VALUE_TYPE(,K,V) CLASS_TYPE(K,V) createWithExpected(final int expected, final float loadFactor) {
         double capacity = Math.ceil((double)expected / (double)loadFactor);
         if (!Double.isFinite(capacity)) {
             throw new IllegalArgumentException("Invalid load factor");
@@ -151,8 +156,9 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     }
 
     /** must be deterministic given a key */
-    protected static int getHash(final long key) {
-        return (int)HashUtil.mix(key);
+    // define for subclasses to use
+    protected static int getHash(final KEY_TYPE_RAW key) {
+        return KEY_HASH_FUNCTION(key);
     }
 
     /**
@@ -162,28 +168,28 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         return this.loadFactor;
     }
 
-    protected static <V> TableEntry<V> getAtIndexAcquire(final TableEntry<V>[] table, final int index) {
+    protected static GENERIC_KEY_VALUE_TYPE(,K,V) TABLE_ENTRY_TYPE(K,V) getAtIndexAcquire(final TABLE_ENTRY_TYPE(K,V)[] table, final int index) {
         //noinspection unchecked
-        return (TableEntry<V>)TableEntry.TABLE_ENTRY_ARRAY_HANDLE.getAcquire(table, index);
+        return (TABLE_ENTRY_TYPE(K,V))TABLE_ENTRY_NAME.TABLE_ENTRY_ARRAY_HANDLE.getAcquire(table, index);
     }
 
-    protected static <V> void setAtIndexRelease(final TableEntry<V>[] table, final int index, final TableEntry<V> value) {
-        TableEntry.TABLE_ENTRY_ARRAY_HANDLE.setRelease(table, index, value);
+    protected static GENERIC_KEY_VALUE_TYPE(,K,V) void setAtIndexRelease(final TABLE_ENTRY_TYPE(K,V)[] table, final int index, final TABLE_ENTRY_TYPE(K,V) value) {
+        TABLE_ENTRY_NAME.TABLE_ENTRY_ARRAY_HANDLE.setRelease(table, index, value);
     }
 
-    protected static <V> void setAtIndexVolatile(final TableEntry<V>[] table, final int index, final TableEntry<V> value) {
-        TableEntry.TABLE_ENTRY_ARRAY_HANDLE.setVolatile(table, index, value);
+    protected static GENERIC_KEY_VALUE_TYPE(,K,V) void setAtIndexVolatile(final TABLE_ENTRY_TYPE(K,V)[] table, final int index, final TABLE_ENTRY_TYPE(K,V) value) {
+        TABLE_ENTRY_NAME.TABLE_ENTRY_ARRAY_HANDLE.setVolatile(table, index, value);
     }
 
-    protected static <V> TableEntry<V> compareAndExchangeAtIndexVolatile(final TableEntry<V>[] table, final int index,
-                                                                         final TableEntry<V> expect, final TableEntry<V> update) {
+    protected static GENERIC_KEY_VALUE_TYPE(,K,V) TABLE_ENTRY_TYPE(K,V) compareAndExchangeAtIndexVolatile(final TABLE_ENTRY_TYPE(K,V)[] table, final int index,
+                                                                                    final TABLE_ENTRY_TYPE(K,V) expect, final TABLE_ENTRY_TYPE(K,V) update) {
         //noinspection unchecked
-        return (TableEntry<V>)TableEntry.TABLE_ENTRY_ARRAY_HANDLE.compareAndExchange(table, index, expect, update);
+        return (TABLE_ENTRY_TYPE(K,V))TABLE_ENTRY_NAME.TABLE_ENTRY_ARRAY_HANDLE.compareAndExchange(table, index, expect, update);
     }
 
-    protected TableEntry<V>[] fetchNewTable(final TableEntry<V>[] expectedCurr) {
-        final TableEntry<V>[] candidate = this.nextTable;
-        final TableEntry<V>[] current = this.table;
+    protected TABLE_ENTRY_TYPE(K,V)[] fetchNewTable(final TABLE_ENTRY_TYPE(K,V)[] expectedCurr) {
+        final TABLE_ENTRY_TYPE(K,V)[] candidate = this.nextTable;
+        final TABLE_ENTRY_TYPE(K,V)[] current = this.table;
         // Note: We fetch a new table once RESIZE_NODE is encountered in the expectedCurr table.
         //       The resize logic guarantees that the RESIZE_NODE is only written to a bin once
         //       the chain is fully moved to the next table. Provided that we actually fetch the next table,
@@ -197,17 +203,19 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     }
 
     /**
-     * Returns the possible node associated with the key, or {@code null} if there is no such node. The node
-     * returned may have a {@code null} {@link TableEntry#value}, in which case the node is a placeholder for
+     * Returns the possible node associated with the key, or {@code null} if there is no such node.
+#if PRIMITIVE_VALUE_TYPE == 0
+     * The node returned may have a {@code VALUE_DEFAULT_VALUE} {@link TABLE_ENTRY_NAME#value}, in which case the node is a placeholder for
      * a compute/computeIfAbsent call. The placeholder node should not be considered mapped in order to preserve
      * happens-before relationships between writes and reads in the map.
+#endif
      */
-    protected final TableEntry<V> getNode(final long key) {
-        final int hash = getHash(key);
+    protected final TABLE_ENTRY_TYPE(K,V) getNode(final KEY_TYPE key) {
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         for (;;) {
-            TableEntry<V> node = getAtIndexAcquire(table, hash & (table.length - 1));
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, hash & (table.length - 1));
 
             if (node == null) {
                 // node == null
@@ -219,11 +227,13 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 continue;
             }
 
-            for (; node != null; node = node.getNextVolatile()) {
-                if (node.key == key) {
+            do {
+                if (KEY_EQUALS_FUNCTION(node.key,key)) {
                     return node;
                 }
-            }
+
+                node = node.getNextAcquire();
+            } while (node != null);
 
             // node == null
             return node;
@@ -231,13 +241,19 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     }
 
     /**
-     * Returns the currently mapped value associated with the specified key, or {@code null} if there is none.
+     * Returns the currently mapped value associated with the specified key, or {@code VALUE_DEFAULT_VALUE} if there is none.
      *
      * @param key Specified key
+     * @throws NullPointerException If key is null
      */
-    public V get(final long key) {
-        final TableEntry<V> node = this.getNode(key);
-        return node == null ? null : node.getValueVolatile();
+    public VALUE_TYPE get(final KEY_TYPE key) {
+        NULL_CHECK_KEY(key)
+
+        final TABLE_ENTRY_TYPE(K,V) node = this.getNode(key);
+#if PRIMITIVE_VALUE_TYPE == 0
+        // note: getValueVolatile == VALUE_DEFAULT_VALUE if a placement node, so we don't need to check it
+#endif
+        return node == null ? VALUE_DEFAULT_VALUE : node.getValueVolatile();
     }
 
     /**
@@ -245,29 +261,45 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      *
      * @param key Specified key
      * @param defaultValue Specified default value
+     * @throws NullPointerException If key is null
      */
-    public V getOrDefault(final long key, final V defaultValue) {
-        final TableEntry<V> node = this.getNode(key);
+    public VALUE_TYPE getOrDefault(final KEY_TYPE key, final VALUE_TYPE defaultValue) {
+        NULL_CHECK_KEY(key)
+
+#if PRIMITIVE_VALUE_TYPE == 0
+        final TABLE_ENTRY_TYPE(K,V) node = this.getNode(key);
         if (node == null) {
             return defaultValue;
         }
 
-        final V ret = node.getValueVolatile();
-        if (ret == null) {
-            // ret == null for nodes pre-allocated to compute() and friends
+        final VALUE_TYPE ret = node.getValueVolatile();
+        if (ret == VALUE_DEFAULT_VALUE) {
+            // ret == VALUE_DEFAULT_VALUE for nodes pre-allocated to compute() and friends
             return defaultValue;
         }
 
         return ret;
+#else
+        final TABLE_ENTRY_TYPE(K,V) node = this.getNode(key);
+        return node == null ? defaultValue : node.getValueVolatile();
+#endif
     }
 
     /**
      * Returns whether the specified key is mapped to some value.
      * @param key Specified key
+     * @throws NullPointerException If key is null
      */
-    public boolean containsKey(final long key) {
-        // cannot use getNode, as the node may be a placeholder for compute()
-        return this.get(key) != null;
+    public boolean containsKey(final KEY_TYPE key) {
+        NULL_CHECK_KEY(key)
+
+#if PRIMITIVE_VALUE_TYPE == 0
+        // must also check for VALUE_DEFAULT_VALUE, for nodes pre-allocated to compute() and friends
+        final TABLE_ENTRY_TYPE(K,V) node = this.getNode(key);
+        return node != null && node.getValueVolatile() != VALUE_DEFAULT_VALUE;
+#else
+        return this.getNode(key) != null;
+#endif
     }
 
     /**
@@ -275,15 +307,16 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * @param value Specified value
      * @throws NullPointerException If value is null
      */
-    public boolean containsValue(final V value) {
-        Objects.requireNonNull(value, "Value cannot be null");
+    public boolean containsValue(final VALUE_TYPE value) {
+        NULL_CHECK_VALUE(value)
 
-        final NodeIterator<V> iterator = new NodeIterator<>(this);
+        final NODE_ITERATOR_TYPE(K,V) iterator = new NODE_ITERATOR_NAME_DIAMONDS(this);
 
-        TableEntry<V> node;
+        TABLE_ENTRY_TYPE(K,V) node;
         while ((node = iterator.findNext()) != null) {
             // need to use acquire here to ensure the happens-before relationship
-            if (node.getValueAcquire() == value) {
+            final VALUE_TYPE nodeValue = node.getValueAcquire();
+            if (VALUE_EQUALS_FUNCTION(value,nodeValue)) {
                 return true;
             }
         }
@@ -292,19 +325,35 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     }
 
     /**
+     * Returns whether the specified key is mapped and is mapped to the specified value.
+     * @param key Specified key
+     * @param value Specified value
+     * @throws NullPointerException If key is null
+     * @throws NullPointerException If value is null
+     */
+     public boolean contains(final KEY_TYPE key, final VALUE_TYPE value) {
+        NULL_CHECK_KEY(key)
+        NULL_CHECK_VALUE(value)
+
+        final TABLE_ENTRY_TYPE(K,V) node = this.getNode(key);
+
+        if (node == null) {
+            return false;
+        }
+
+        final VALUE_TYPE nodeValue = node.getValueAcquire();
+
+#if PRIMITIVE_VALUE_TYPE == 0
+        // value != VALUE_DEFAULT_VALUE due to check, so we check placeholder node implicitly
+#endif
+        return VALUE_EQUALS_FUNCTION(value,nodeValue);
+     }
+
+    /**
      * Returns the number of mappings in this map.
      */
     public int size() {
-        final long ret = this.size.get();
-
-        if (ret < 0L) {
-            return 0;
-        }
-        if (ret > (long)Integer.MAX_VALUE) {
-            return Integer.MAX_VALUE;
-        }
-
-        return (int)ret;
+        return (int)Math.clamp(this.size.get(), 0L, (long)Integer.MAX_VALUE);
     }
 
     /**
@@ -361,12 +410,12 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         // create new table data
 
         // noinspection unchecked
-        final TableEntry<V>[] newTable = new TableEntry[capacity];
+        final TABLE_ENTRY_TYPE(K,V)[] newTable = new TABLE_ENTRY_NAME[capacity];
 
         // transfer nodes from old table
 
         // does not need to be volatile read, just plain
-        final TableEntry<V>[] oldTable = this.table;
+        final TABLE_ENTRY_TYPE(K,V)[] oldTable = this.table;
         this.nextTable = newTable;
 
         // when resizing, the old entries at bin i (where i = hash % oldTable.length) are assigned to
@@ -385,15 +434,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
 
         // noinspection unchecked
-        final TableEntry<V>[] work = new TableEntry[1 << capDiffShift]; // typically, capDiffShift = 1
+        final TABLE_ENTRY_TYPE(K,V)[] work = new TABLE_ENTRY_NAME[1 << capDiffShift]; // typically, capDiffShift = 1
 
         for (int i = 0, len = oldTable.length; i < len; ++i) {
-            TableEntry<V> binNode = getAtIndexAcquire(oldTable, i);
+            TABLE_ENTRY_TYPE(K,V) binNode = getAtIndexAcquire(oldTable, i);
 
             for (;;) {
                 if (binNode == null) {
                     // just need to replace the bin node, do not need to move anything
-                    if (null == (binNode = compareAndExchangeAtIndexVolatile(oldTable, i, null, (TableEntry<V>)RESIZE_NODE))) {
+                    if (null == (binNode = compareAndExchangeAtIndexVolatile(oldTable, i, null, (TABLE_ENTRY_TYPE(K,V))RESIZE_NODE))) {
                         break;
                     } // else: binNode != null, fall through
                 }
@@ -410,7 +459,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     // specifically, as long as the resizeNode is release written there are no cases where another thread
                     // will see our writes to the new table
 
-                    TableEntry<V> next = binNode.getNextPlain();
+                    TABLE_ENTRY_TYPE(K,V) next = binNode.getNextPlain();
 
                     if (next == null) {
                         // simple case: do not use work array
@@ -419,18 +468,18 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         // beginning of a call, so any additions onto _next_ don't really matter
                         // additionally, the old node is replaced so that writers automatically forward to the new table,
                         // which resolves any issues
-                        newTable[getHash(binNode.key) & (capacity - 1)] = binNode;
+                        newTable[KEY_HASH_FUNCTION(binNode.key) & (capacity - 1)] = binNode;
                     } else {
                         // reset for next usage
                         Arrays.fill(work, null);
 
-                        for (TableEntry<V> curr = binNode; curr != null; curr = curr.getNextPlain()) {
-                            final int newTableIdx = getHash(curr.key) & (capacity - 1);
+                        for (TABLE_ENTRY_TYPE(K,V) curr = binNode; curr != null; curr = curr.getNextPlain()) {
+                            final int newTableIdx = KEY_HASH_FUNCTION(curr.key) & (capacity - 1);
                             final int workIdx = newTableIdx >>> capOldShift;
 
-                            final TableEntry<V> replace = new TableEntry<>(curr.key, curr.getValuePlain());
+                            final TABLE_ENTRY_TYPE(K,V) replace = new TABLE_ENTRY_NAME_DIAMONDS(curr.key, curr.getValuePlain());
 
-                            final TableEntry<V> workNode = work[workIdx];
+                            final TABLE_ENTRY_TYPE(K,V) workNode = work[workIdx];
                             work[workIdx] = replace;
 
                             if (workNode == null) {
@@ -443,7 +492,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         }
                     }
 
-                    setAtIndexRelease(oldTable, i, (TableEntry<V>)RESIZE_NODE);
+                    setAtIndexRelease(oldTable, i, (TABLE_ENTRY_TYPE(K,V))RESIZE_NODE);
                     break;
                 }
             }
@@ -474,27 +523,29 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * mapped to {@code value}.
      * @param key Specified key
      * @param value Specified value
+     * @throws NullPointerException If key is null
      * @throws NullPointerException If value is null
-     * @return Old value previously associated with key, or {@code null} if none.
+     * @return Old value previously associated with key, or {@code VALUE_DEFAULT_VALUE} if none.
      */
-    public V put(final long key, final V value) {
-        Objects.requireNonNull(value, "Value may not be null");
+    public VALUE_TYPE put(final KEY_TYPE key, final VALUE_TYPE value) {
+        NULL_CHECK_KEY(key)
+        NULL_CHECK_VALUE(value)
 
-        final int hash = getHash(key);
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TableEntry<>(key, value)))) {
+                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TABLE_ENTRY_NAME_DIAMONDS(key, value)))) {
                         // successfully inserted
                         this.addSize(1L);
-                        return null;
+                        return VALUE_DEFAULT_VALUE;
                     } // else: node != null, fall through
                 }
 
@@ -508,10 +559,10 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
-                            final V ret = node.getValuePlain();
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
+                            final VALUE_TYPE ret = node.getValuePlain();
                             node.setValueVolatile(value);
                             return ret;
                         }
@@ -519,11 +570,11 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
                     // volatile ordering ensured by addSize(), but we need release here
                     // to ensure proper ordering with reads and other writes
-                    prev.setNextRelease(new TableEntry<>(key, value));
+                    prev.setNextRelease(new TABLE_ENTRY_NAME_DIAMONDS(key, value));
                 }
 
                 this.addSize(1L);
-                return null;
+                return VALUE_DEFAULT_VALUE;
             }
         }
     }
@@ -533,27 +584,29 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * currently mapped to some value.
      * @param key Specified key
      * @param value Specified value
+     * @throws NullPointerException If key is null
      * @throws NullPointerException If value is null
-     * @return Value currently associated with key, or {@code null} if none and {@code value} was associated.
+     * @return Value currently associated with key, or {@code VALUE_DEFAULT_VALUE} if none and {@code value} was associated.
      */
-    public V putIfAbsent(final long key, final V value) {
-        Objects.requireNonNull(value, "Value may not be null");
+    public VALUE_TYPE putIfAbsent(final KEY_TYPE key, final VALUE_TYPE value) {
+        NULL_CHECK_KEY(key)
+        NULL_CHECK_VALUE(value)
 
-        final int hash = getHash(key);
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TableEntry<>(key, value)))) {
+                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TABLE_ENTRY_NAME_DIAMONDS(key, value)))) {
                         // successfully inserted
                         this.addSize(1L);
-                        return null;
+                        return VALUE_DEFAULT_VALUE;
                     } // else: node != null, fall through
                 }
 
@@ -563,11 +616,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 }
 
                 // optimise ifAbsent calls: check if first node is key before attempting lock acquire
-                if (node.key == key) {
-                    final V ret = node.getValueVolatile();
-                    if (ret != null) {
+                if (KEY_EQUALS_FUNCTION(node.key,key)) {
+#if PRIMITIVE_VALUE_TYPE == 0
+                    final VALUE_TYPE ret = node.getValueVolatile();
+                    if (ret != VALUE_DEFAULT_VALUE) {
                         return ret;
                     } // else: fall back to lock to read the node
+#else
+                    return node.getValueVolatile();
+#endif
                 }
 
                 synchronized (node) {
@@ -575,20 +632,20 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
                             return node.getValuePlain();
                         }
                     }
 
                     // volatile ordering ensured by addSize(), but we need release here
                     // to ensure proper ordering with reads and other writes
-                    prev.setNextRelease(new TableEntry<>(key, value));
+                    prev.setNextRelease(new TABLE_ENTRY_NAME_DIAMONDS(key, value));
                 }
 
                 this.addSize(1L);
-                return null;
+                return VALUE_DEFAULT_VALUE;
             }
         }
     }
@@ -598,24 +655,26 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * associated with a value.
      * @param key Specified key
      * @param value Specified value
+     * @throws NullPointerException If key is null
      * @throws NullPointerException If value is null
-     * @return Old value previously associated with key, or {@code null} if none.
+     * @return Old value previously associated with key, or {@code VALUE_DEFAULT_VALUE} if none.
      */
-    public V replace(final long key, final V value) {
-        Objects.requireNonNull(value, "Value may not be null");
+    public VALUE_TYPE replace(final KEY_TYPE key, final VALUE_TYPE value) {
+        NULL_CHECK_KEY(key)
+        NULL_CHECK_VALUE(value)
 
-        final int hash = getHash(key);
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    return null;
+                    return VALUE_DEFAULT_VALUE;
                 }
 
                 if (node == RESIZE_NODE) {
@@ -630,46 +689,48 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
                     // plain reads are fine during synchronised access, as we are the only writer
                     for (; node != null; node = node.getNextPlain()) {
-                        if (node.key == key) {
-                            final V ret = node.getValuePlain();
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
+                            final VALUE_TYPE ret = node.getValuePlain();
                             node.setValueVolatile(value);
                             return ret;
                         }
                     }
                 }
 
-                return null;
+                return VALUE_DEFAULT_VALUE;
             }
         }
     }
 
     /**
      * Atomically updates the value associated with {@code key} to {@code update} if the currently associated
-     * value is reference equal to {@code expect}, otherwise does nothing.
+     * value is equal to {@code expect}, otherwise does nothing.
      * @param key Specified key
      * @param expect Expected value to check current mapped value with
      * @param update Update value to replace mapped value with
-     * @throws NullPointerException If value is null
-     * @return If the currently mapped value is not reference equal to {@code expect}, then returns the currently mapped
-     *         value. If the key is not mapped to any value, then returns {@code null}. If neither of the two cases are
+     * @throws NullPointerException If key is null
+     * @throws NullPointerException If expect is null
+     * @throws NullPointerException If update is null
+     * @return If the currently mapped value is not equal to {@code expect}, then returns the currently mapped
+     *         value. If the key is not mapped to any value, then returns {@code VALUE_DEFAULT_VALUE}. If neither of the two cases are
      *         true, then returns {@code expect}.
      */
-    public V replace(final long key, final V expect, final V update) {
-        Objects.requireNonNull(expect, "Expect may not be null");
-        Objects.requireNonNull(update, "Update may not be null");
+    public VALUE_TYPE replace(final KEY_TYPE key, final VALUE_TYPE expect, final VALUE_TYPE update) {
+        NULL_CHECK_VALUE_MSG(expect, "Expect may not be null")
+        NULL_CHECK_VALUE_MSG(update, "Update may not be null")
 
-        final int hash = getHash(key);
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    return null;
+                    return VALUE_DEFAULT_VALUE;
                 }
 
                 if (node == RESIZE_NODE) {
@@ -684,10 +745,10 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
                     // plain reads are fine during synchronised access, as we are the only writer
                     for (; node != null; node = node.getNextPlain()) {
-                        if (node.key == key) {
-                            final V ret = node.getValuePlain();
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
+                            final VALUE_TYPE ret = node.getValuePlain();
 
-                            if (ret != expect) {
+                            if (!VALUE_EQUALS_FUNCTION(expect,ret)) {
                                 return ret;
                             }
 
@@ -697,30 +758,33 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     }
                 }
 
-                return null;
+                return VALUE_DEFAULT_VALUE;
             }
         }
     }
 
     /**
      * Atomically removes the mapping for the specified key and returns the value it was associated with. If the key
-     * is not mapped to a value, then does nothing and returns {@code null}.
+     * is not mapped to a value, then does nothing and returns {@code VALUE_DEFAULT_VALUE}.
      * @param key Specified key
-     * @return Old value previously associated with key, or {@code null} if none.
+     * @throws NullPointerException If key is null
+     * @return Old value previously associated with key, or {@code VALUE_DEFAULT_VALUE} if none.
      */
-    public V remove(final long key) {
-        final int hash = getHash(key);
+    public VALUE_TYPE remove(final KEY_TYPE key) {
+        NULL_CHECK_KEY(key)
 
-        TableEntry<V>[] table = this.table;
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    return null;
+                    return VALUE_DEFAULT_VALUE;
                 }
 
                 if (node == RESIZE_NODE) {
@@ -729,18 +793,18 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 }
 
                 boolean removed = false;
-                V ret = null;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
 
                 synchronized (node) {
                     if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
 
                     // plain reads are fine during synchronised access, as we are the only writer
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
                             ret = node.getValuePlain();
                             removed = true;
 
@@ -768,27 +832,30 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
     /**
      * Atomically removes the mapping for the specified key if it is mapped to {@code expect} and returns {@code expect}. If the key
-     * is not mapped to a value, then does nothing and returns {@code null}. If the key is mapped to a value that is not reference
+     * is not mapped to a value, then does nothing and returns {@code VALUE_DEFAULT_VALUE}. If the key is mapped to a value that is not
      * equal to {@code expect}, then returns that value.
      * @param key Specified key
      * @param expect Specified expected value
+     * @throws NullPointerException If key is null
      * @return The specified expected value if the key was mapped to {@code expect}. If
-     *         the key is not mapped to any value, then returns {@code null}. If neither of those cases are true,
-     *         then returns the current (non-null) mapped value for key.
+     *         the key is not mapped to any value, then returns {@code VALUE_DEFAULT_VALUE}. If neither of those cases are true,
+     *         then returns the current mapped value for key.
      */
-    public V remove(final long key, final V expect) {
-        final int hash = getHash(key);
+    public VALUE_TYPE remove(final KEY_TYPE key, final VALUE_TYPE expect) {
+        NULL_CHECK_KEY(key)
 
-        TableEntry<V>[] table = this.table;
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    return null;
+                    return VALUE_DEFAULT_VALUE;
                 }
 
                 if (node == RESIZE_NODE) {
@@ -797,20 +864,20 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 }
 
                 boolean removed = false;
-                V ret = null;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
 
                 synchronized (node) {
                     if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
 
                     // plain reads are fine during synchronised access, as we are the only writer
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
                             ret = node.getValuePlain();
-                            if (ret == expect) {
+                            if (VALUE_EQUALS_FUNCTION(expect, ret)) {
                                 removed = true;
 
                                 // volatile ordering ensured by addSize(), but we need release here
@@ -835,36 +902,43 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
     }
 
+    @FunctionalInterface
+    public static interface GENERIC_KEY_VALUE_TYPE(RemoveIfPredicate,K,V) {
+        public boolean test(final VALUE_TYPE value);
+    }
+
     /**
      * Atomically removes the mapping for the specified key the predicate returns true for its currently mapped value. If the key
-     * is not mapped to a value, then does nothing and returns {@code null}.
+     * is not mapped to a value, then does nothing and returns {@code VALUE_DEFAULT_VALUE}.
      *
      * <p>
-     * This function is a "functional methods" as defined by {@link ConcurrentLong2ReferenceChainedHashTable}.
+     * This function is a "functional method" as defined by {@link CLASS_NAME}.
      * </p>
      *
      * @param key Specified key
      * @param predicate Specified predicate
+     * @throws NullPointerException If key is null
      * @throws NullPointerException If predicate is null
      * @return The specified expected value if the key was mapped to {@code expect}. If
      *         the key is not mapped to any value, then returns {@code null}. If neither of those cases are true,
      *         then returns the current (non-null) mapped value for key.
      */
-    public V removeIf(final long key, final Predicate<? super V> predicate) {
+    public VALUE_TYPE removeIf(final KEY_TYPE key, final GENERIC_KEY_VALUE_TYPE(RemoveIfPredicate,K,? super V) predicate) {
+        NULL_CHECK_KEY(key)
         Objects.requireNonNull(predicate, "Predicate may not be null");
 
-        final int hash = getHash(key);
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    return null;
+                    return VALUE_DEFAULT_VALUE;
                 }
 
                 if (node == RESIZE_NODE) {
@@ -873,18 +947,18 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 }
 
                 boolean removed = false;
-                V ret = null;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
 
                 synchronized (node) {
                     if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
 
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
 
                     // plain reads are fine during synchronised access, as we are the only writer
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
                             ret = node.getValuePlain();
                             if (predicate.test(ret)) {
                                 removed = true;
@@ -911,26 +985,47 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
     }
 
+#if PRIMITIVE_VALUE_TYPE == 0
+
+#define BI_FUNCTION_NAME Bi##KEY_TYPE_FIRST_UPPER##VALUE_TYPE_FIRST_UPPER##VALUE_TYPE_FIRST_UPPER##Function
+
+#comment Note: P1 is key type while P2, R are value type
+#if PRIMITIVE_KEY_TYPE == 0
+#define BI_FUNCTION_P1 P1
+#define BI_FUNCTION_TYPE(P1,P2,R) BI_FUNCTION_NAME##<P1,P2,R>
+#else
+#define BI_FUNCTION_TYPE(P1,P2,R) BI_FUNCTION_NAME##<P2,R>
+#define BI_FUNCTION_P1 KEY_TYPE
+#endif
+
+    @FunctionalInterface
+    public static interface BI_FUNCTION_TYPE(P1,P2,R) {
+        public R apply(final BI_FUNCTION_P1 key, final P2 value);
+    }
+
     /**
      * See {@link java.util.concurrent.ConcurrentMap#compute(Object, BiFunction)}
      * <p>
-     * This function is a "functional methods" as defined by {@link ConcurrentLong2ReferenceChainedHashTable}.
+     * This function is a "functional method" as defined by {@link CLASS_NAME}.
      * </p>
      */
-    public V compute(final long key, final BiLong1Function<? super V, ? extends V> function) {
-        final int hash = getHash(key);
+    public VALUE_TYPE compute(final KEY_TYPE key, final BI_FUNCTION_TYPE(K,? super V,? extends V) function) {
+        NULL_CHECK_KEY(key)
+        Objects.requireNonNull(function, "Function may not be null");
 
-        TableEntry<V>[] table = this.table;
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
-                V ret = null;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
                 if (node == null) {
-                    final TableEntry<V> insert = new TableEntry<>(key, null);
+                    final TABLE_ENTRY_TYPE(K,V) insert = new TABLE_ENTRY_NAME_DIAMONDS(key, VALUE_DEFAULT_VALUE);
 
                     boolean added = false;
 
@@ -942,10 +1037,10 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                                 setAtIndexVolatile(table, index, null);
                                 ThrowUtil.throwUnchecked(throwable);
                                 // unreachable
-                                return null;
+                                return VALUE_DEFAULT_VALUE;
                             }
 
-                            if (ret == null) {
+                            if (ret == VALUE_DEFAULT_VALUE) {
                                 setAtIndexVolatile(table, index, null);
                                 return ret;
                             } else {
@@ -976,12 +1071,12 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
-                            final V old = node.getValuePlain();
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
+                            final VALUE_TYPE old = node.getValuePlain();
 
-                            final V computed = function.apply(key, old);
+                            final VALUE_TYPE computed = function.apply(key, old);
 
                             if (computed != null) {
                                 node.setValueVolatile(computed);
@@ -1002,11 +1097,11 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     }
 
                     if (!removed) {
-                        final V computed = function.apply(key, null);
+                        final VALUE_TYPE computed = function.apply(key, VALUE_DEFAULT_VALUE);
                         if (computed != null) {
                             // volatile ordering ensured by addSize(), but we need release here
                             // to ensure proper ordering with reads and other writes
-                            prev.setNextRelease(new TableEntry<>(key, computed));
+                            prev.setNextRelease(new TABLE_ENTRY_NAME_DIAMONDS(key, computed));
                             ret = computed;
                             added = true;
                         }
@@ -1025,26 +1120,36 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
     }
 
+#define MON_FUNCTION_NAME Bi##KEY_TYPE_FIRST_UPPER##VALUE_TYPE_FIRST_UPPER##Function
+
+    @FunctionalInterface
+    public static interface GENERIC_KEY_VALUE_TYPE(MON_FUNCTION_NAME,K,V) {
+        public VALUE_TYPE apply(final KEY_TYPE key);
+    }
+
     /**
      * See {@link java.util.concurrent.ConcurrentMap#computeIfAbsent(Object, Function)}
      * <p>
-     * This function is a "functional methods" as defined by {@link ConcurrentLong2ReferenceChainedHashTable}.
+     * This function is a "functional method" as defined by {@link CLASS_NAME}.
      * </p>
      */
-    public V computeIfAbsent(final long key, final LongFunction<? extends V> function) {
-        final int hash = getHash(key);
+    public VALUE_TYPE computeIfAbsent(final KEY_TYPE key, final GENERIC_KEY_VALUE_TYPE(MON_FUNCTION_NAME,? super K,? extends V) function) {
+        NULL_CHECK_KEY(key)
+        Objects.requireNonNull(function, "Function may not be null");
 
-        TableEntry<V>[] table = this.table;
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
-                V ret = null;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
                 if (node == null) {
-                    final TableEntry<V> insert = new TableEntry<>(key, null);
+                    final TABLE_ENTRY_TYPE(K,V) insert = new TABLE_ENTRY_NAME_DIAMONDS(key, VALUE_DEFAULT_VALUE);
 
                     boolean added = false;
 
@@ -1056,12 +1161,12 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                                 setAtIndexVolatile(table, index, null);
                                 ThrowUtil.throwUnchecked(throwable);
                                 // unreachable
-                                return null;
+                                return VALUE_DEFAULT_VALUE;
                             }
 
-                            if (ret == null) {
+                            if (ret == VALUE_DEFAULT_VALUE) {
                                 setAtIndexVolatile(table, index, null);
-                                return null;
+                                return VALUE_DEFAULT_VALUE;
                             } else {
                                 // volatile ordering ensured by addSize(), but we need release here
                                 // to ensure proper ordering with reads and other writes
@@ -1083,11 +1188,15 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                 }
 
                 // optimise ifAbsent calls: check if first node is key before attempting lock acquire
-                if (node.key == key) {
+                if (KEY_EQUALS_FUNCTION(node.key,key)) {
+#if PRIMITIVE_VALUE_TYPE == 0
                     ret = node.getValueVolatile();
-                    if (ret != null) {
+                    if (ret != VALUE_DEFAULT_VALUE) {
                         return ret;
                     } // else: fall back to lock to read the node
+#else
+                    return node.getValueVolatile();
+#endif
                 }
 
                 boolean added = false;
@@ -1097,19 +1206,19 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
                             ret = node.getValuePlain();
                             return ret;
                         }
                     }
 
-                    final V computed = function.apply(key);
+                    final VALUE_TYPE computed = function.apply(key);
                     if (computed != null) {
                         // volatile ordering ensured by addSize(), but we need release here
                         // to ensure proper ordering with reads and other writes
-                        prev.setNextRelease(new TableEntry<>(key, computed));
+                        prev.setNextRelease(new TABLE_ENTRY_NAME_DIAMONDS(key, computed));
                         ret = computed;
                         added = true;
                     }
@@ -1127,22 +1236,25 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     /**
      * See {@link java.util.concurrent.ConcurrentMap#computeIfPresent(Object, BiFunction)}
      * <p>
-     * This function is a "functional methods" as defined by {@link ConcurrentLong2ReferenceChainedHashTable}.
+     * This function is a "functional method" as defined by {@link CLASS_NAME}.
      * </p>
      */
-    public V computeIfPresent(final long key, final BiLong1Function<? super V, ? extends V> function) {
-        final int hash = getHash(key);
+    public VALUE_TYPE computeIfPresent(final KEY_TYPE key, final BI_FUNCTION_TYPE(K,? super V,? extends V) function) {
+        NULL_CHECK_KEY(key)
+        Objects.requireNonNull(function, "Function may not be null");
 
-        TableEntry<V>[] table = this.table;
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    return null;
+                    return VALUE_DEFAULT_VALUE;
                 }
 
                 if (node == RESIZE_NODE) {
@@ -1157,12 +1269,12 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
-                            final V old = node.getValuePlain();
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
+                            final VALUE_TYPE old = node.getValuePlain();
 
-                            final V computed = function.apply(key, old);
+                            final VALUE_TYPE computed = function.apply(key, old);
 
                             if (computed != null) {
                                 node.setValueVolatile(computed);
@@ -1187,7 +1299,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     this.subSize(1L);
                 }
 
-                return null;
+                return VALUE_DEFAULT_VALUE;
             }
         }
     }
@@ -1195,24 +1307,26 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
     /**
      * See {@link java.util.concurrent.ConcurrentMap#merge(Object, Object, BiFunction)}
      * <p>
-     * This function is a "functional methods" as defined by {@link ConcurrentLong2ReferenceChainedHashTable}.
+     * This function is a "functional method" as defined by {@link CLASS_NAME}.
      * </p>
      */
-    public V merge(final long key, final V def, final BiFunction<? super V, ? super V, ? extends V> function) {
+    public VALUE_TYPE merge(final KEY_TYPE key, final VALUE_TYPE def, final BiFunction<? super VALUE_TYPE, ? super VALUE_TYPE, ? extends VALUE_TYPE> function) {
+        NULL_CHECK_KEY(key)
         Objects.requireNonNull(def, "Default value may not be null");
+        Objects.requireNonNull(function, "Function may not be null");
 
-        final int hash = getHash(key);
+        final int hash = KEY_HASH_FUNCTION(key);
 
-        TableEntry<V>[] table = this.table;
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
         table_loop:
         for (;;) {
             final int index = hash & (table.length - 1);
 
-            TableEntry<V> node = getAtIndexAcquire(table, index);
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
             node_loop:
             for (;;) {
                 if (node == null) {
-                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TableEntry<>(key, def)))) {
+                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TABLE_ENTRY_NAME_DIAMONDS(key, def)))) {
                         // successfully inserted
                         this.addSize(1L);
                         return def;
@@ -1226,19 +1340,19 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
                 boolean removed = false;
                 boolean added = false;
-                V ret = null;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
 
                 synchronized (node) {
                     if (node != (node = getAtIndexAcquire(table, index))) {
                         continue node_loop;
                     }
                     // plain reads are fine during synchronised access, as we are the only writer
-                    TableEntry<V> prev = null;
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
                     for (; node != null; prev = node, node = node.getNextPlain()) {
-                        if (node.key == key) {
-                            final V old = node.getValuePlain();
+                        if (KEY_EQUALS_FUNCTION(node.key,key)) {
+                            final VALUE_TYPE old = node.getValuePlain();
 
-                            final V computed = function.apply(old, def);
+                            final VALUE_TYPE computed = function.apply(old, def);
 
                             if (computed != null) {
                                 node.setValueVolatile(computed);
@@ -1261,7 +1375,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                     if (!removed) {
                         // volatile ordering ensured by addSize(), but we need release here
                         // to ensure proper ordering with reads and other writes
-                        prev.setNextRelease(new TableEntry<>(key, def));
+                        prev.setNextRelease(new TABLE_ENTRY_NAME_DIAMONDS(key, def));
                         ret = def;
                         added = true;
                     }
@@ -1278,6 +1392,148 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
             }
         }
     }
+#endif
+
+#if NUMBER_VALUE_TYPE != 0
+    /**
+     * Atomically inserts a mapping for the specified key with the provided default value if the key is not mapped or
+     * updates the current value by adding the specified increment.
+     * @param key Specified key
+     * @param increment Specified increment
+     * @param defaultValue Specified default value
+     * @throws NullPointerException If key is null
+     * @return The newly mapped value
+     */
+    public VALUE_TYPE addTo(final KEY_TYPE key, final VALUE_TYPE increment, final VALUE_TYPE defaultValue) {
+        NULL_CHECK_KEY(key)
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
+        table_loop:
+        for (;;) {
+            final int index = hash & (table.length - 1);
+
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
+            node_loop:
+            for (;;) {
+                if (node == null) {
+                    if (null == (node = compareAndExchangeAtIndexVolatile(table, index, null, new TABLE_ENTRY_NAME_DIAMONDS(key, defaultValue)))) {
+                        // successfully inserted
+                        this.addSize(1L);
+                        return defaultValue;
+                    } // else: node != null, fall through
+                }
+
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
+                    continue table_loop;
+                }
+
+                synchronized (node) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
+                        continue node_loop;
+                    }
+                    // plain reads are fine during synchronised access, as we are the only writer
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
+                    for (; node != null; prev = node, node = node.getNextPlain()) {
+                        if (node.key == key) {
+                            final VALUE_TYPE ret = node.getValuePlain() + increment;
+                            node.setValueVolatile(ret);
+                            return ret;
+                        }
+                    }
+
+                    // volatile ordering ensured by addSize(), but we need release here
+                    // to ensure proper ordering with reads and other writes
+                    prev.setNextRelease(new TABLE_ENTRY_NAME_DIAMONDS(key, defaultValue));
+                }
+
+                this.addSize(1L);
+                return defaultValue;
+            }
+        }
+    }
+
+    /**
+     * Atomically decrements the mapping by the specified decrement and then removes the mapping if it is below or equal to
+     * the specified threshold. If the key is not mapped, then an exception is thrown.
+     * @param key Specified key
+     * @param decrement Specified decrement
+     * @param threshold Specified threshold
+     * @throws IllegalStateException If there exists no mapping for the key
+     * @throws NullPointerException If key is null
+     * @return The previous value decremented by the specified decrement
+     */
+    public VALUE_TYPE decFrom(final KEY_TYPE key, final VALUE_TYPE decrement, final VALUE_TYPE threshold) {
+        NULL_CHECK_KEY(key)
+        final int hash = KEY_HASH_FUNCTION(key);
+
+        TABLE_ENTRY_TYPE(K,V)[] table = this.table;
+        table_loop:
+        for (;;) {
+            final int index = hash & (table.length - 1);
+
+            TABLE_ENTRY_TYPE(K,V) node = getAtIndexAcquire(table, index);
+            node_loop:
+            for (;;) {
+                if (node == null) {
+                    throw new IllegalStateException();
+                }
+
+                if (node == RESIZE_NODE) {
+                    table = this.fetchNewTable(table);
+                    continue table_loop;
+                }
+
+                boolean removed = false;
+                boolean found = false;
+                VALUE_TYPE ret = VALUE_DEFAULT_VALUE;
+
+                synchronized (node) {
+                    if (node != (node = getAtIndexAcquire(table, index))) {
+                        continue node_loop;
+                    }
+
+                    TABLE_ENTRY_TYPE(K,V) prev = null;
+
+                    // plain reads are fine during synchronised access, as we are the only writer
+                    for (; node != null; prev = node, node = node.getNextPlain()) {
+                        if (node.key == key) {
+                            found = true;
+                            ret = node.getValuePlain() - decrement;
+
+                            if (ret <= threshold) {
+                                removed = true;
+
+                                // volatile ordering ensured by addSize(), but we need release here
+                                // to ensure proper ordering with reads and other writes
+                                if (prev == null) {
+                                    setAtIndexRelease(table, index, node.getNextPlain());
+                                } else {
+                                    prev.setNextRelease(node.getNextPlain());
+                                }
+                            } else {
+                                // note: cannot set if removing, otherwise the operation is not atomic!
+                                node.setValueRelease(ret);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (!found) {
+                    throw new IllegalStateException();
+                }
+
+                if (removed) {
+                    this.subSize(1L);
+                }
+
+                return ret;
+            }
+        }
+    }
+#endif
 
     /**
      * Removes at least all entries currently mapped at the beginning of this call. May not remove entries added during
@@ -1292,9 +1548,9 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         // it is possible to optimise this to directly interact with the table,
         // but we do need to be careful when interacting with resized tables,
         // and the NodeIterator already does this logic
-        final NodeIterator<V> nodeIterator = new NodeIterator<>(this);
+        final NODE_ITERATOR_TYPE(K,V) nodeIterator = new NODE_ITERATOR_NAME_DIAMONDS(this);
 
-        TableEntry<V> node;
+        TABLE_ENTRY_TYPE(K,V) node;
         while ((node = nodeIterator.findNext()) != null) {
             this.remove(node.key);
         }
@@ -1304,12 +1560,12 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * Returns an iterator over the entries in this map. The iterator is only guaranteed to see entries that were
      * added before the beginning of this call, but it may see entries added during.
      */
-    public Iterator<TableEntry<V>> entryIterator() {
-        return new EntryIterator<>(this);
+    public BaseObjectIterator<TABLE_ENTRY_TYPE(K,V)> entryIterator() {
+        return new GENERIC_KEY_VALUE_TYPE_DIAMONDS(EntryNodeIterator,K,V)(this);
     }
 
     @Override
-    public final Iterator<TableEntry<V>> iterator() {
+    public final BaseObjectIterator<TABLE_ENTRY_TYPE(K,V)> iterator() {
         return this.entryIterator();
     }
 
@@ -1317,18 +1573,70 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
      * Returns an iterator over the keys in this map. The iterator is only guaranteed to see keys that were
      * added before the beginning of this call, but it may see keys added during.
      */
-    public PrimitiveIterator.OfLong keyIterator() {
-        return new KeyIterator<>(this);
+    public KEY_ITERATOR_BASE_TYPE(K) keyIterator() {
+        return new GENERIC_KEY_VALUE_TYPE_DIAMONDS(KeyIterator,K,V)(this);
     }
 
     /**
      * Returns an iterator over the values in this map. The iterator is only guaranteed to see values that were
      * added before the beginning of this call, but it may see values added during.
      */
-    public Iterator<V> valueIterator() {
-        return new ValueIterator<>(this);
+    public VALUE_ITERATOR_BASE_TYPE(V) valueIterator() {
+        return new GENERIC_KEY_VALUE_TYPE_DIAMONDS(ValueIterator,K,V)(this);
     }
 
+#if PRIMITIVE_KEY_TYPE == 0
+    protected Keys<K> keys;
+    public Set<K> keys() {
+        final Keys<K> keys = this.keys;
+        if (keys != null) {
+            return keys;
+        }
+        return this.keys = new Keys<>(this);
+    }
+
+    protected static class Keys<K> extends BaseMapSet<K> {
+        protected final CLASS_TYPE(K,?) map;
+
+        protected Keys(final CLASS_TYPE(K,?) map) {
+            this.map = map;
+        }
+
+        @Override
+        public int size() {
+            return this.map.size();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return this.map.isEmpty();
+        }
+
+        @Override
+        public boolean contains(final Object value) {
+            return this.map.containsKey((K)value);
+        }
+
+        @Override
+        protected List<K> asList() {
+            final List<K> ret = new ArrayList<>(this.map.size());
+
+            for (final K element : this) {
+                ret.add(element);
+            }
+
+            return ret;
+        }
+
+        @Override
+        public BaseObjectIterator<K> iterator() {
+            return this.map.keyIterator();
+        }
+    }
+#endif
+
+#if PRIMITIVE_VALUE_TYPE == 0
+    protected Values<V> values;
     public Collection<V> values() {
         final Values<V> values = this.values;
         if (values != null) {
@@ -1337,121 +1645,134 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         return this.values = new Values<>(this);
     }
 
-    public Set<TableEntry<V>> entrySet() {
-        final EntrySet<V> entrySet = this.entrySet;
-        if (entrySet != null) {
-            return entrySet;
-        }
-        return this.entrySet = new EntrySet<>(this);
-    }
+    protected static class Values<V> extends BaseMapCollection<V> {
+        protected final CLASS_TYPE(?,V) map;
 
-    protected static final class EntryIterator<V> extends BaseIteratorImpl<V, TableEntry<V>> {
-
-        public EntryIterator(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map);
-        }
-
-        @Override
-        public TableEntry<V> next() throws NoSuchElementException {
-            return this.nextNode();
-        }
-
-        @Override
-        public void forEachRemaining(final Consumer<? super TableEntry<V>> action) {
-            Objects.requireNonNull(action, "Action may not be null");
-            while (this.hasNext()) {
-                action.accept(this.next());
-            }
-        }
-    }
-
-    protected static final class KeyIterator<V> extends BaseIteratorImpl<V, Long> implements PrimitiveIterator.OfLong {
-
-        public KeyIterator(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map);
-        }
-
-        @Override
-        public Long next() throws NoSuchElementException {
-            return Long.valueOf(this.nextNode().key);
-        }
-
-        @Override
-        public long nextLong() {
-            return this.nextNode().key;
-        }
-
-        @Override
-        public void forEachRemaining(final Consumer<? super Long> action) {
-            Objects.requireNonNull(action, "Action may not be null");
-
-            if (action instanceof LongConsumer longConsumer) {
-                this.forEachRemaining(longConsumer);
-                return;
-            }
-
-            while (this.hasNext()) {
-                action.accept(this.next());
-            }
-        }
-
-        @Override
-        public void forEachRemaining(final LongConsumer action) {
-            Objects.requireNonNull(action, "Action may not be null");
-            while (this.hasNext()) {
-                action.accept(this.nextLong());
-            }
-        }
-    }
-
-    protected static final class ValueIterator<V> extends BaseIteratorImpl<V, V> {
-
-        public ValueIterator(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map);
-        }
-
-        @Override
-        public V next() throws NoSuchElementException {
-            return this.nextNode().getValueVolatile();
-        }
-
-        @Override
-        public void forEachRemaining(final Consumer<? super V> action) {
-            Objects.requireNonNull(action, "Action may not be null");
-            while (this.hasNext()) {
-                action.accept(this.next());
-            }
-        }
-    }
-
-    protected static abstract class BaseIteratorImpl<V, T> extends NodeIterator<V> implements Iterator<T> {
-
-        protected final ConcurrentLong2ReferenceChainedHashTable<V> map;
-        protected TableEntry<V> lastReturned;
-        protected TableEntry<V> nextToReturn;
-
-        protected BaseIteratorImpl(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map);
+        protected Values(final CLASS_TYPE(?,V) map) {
             this.map = map;
         }
 
         @Override
-        public final boolean hasNext() {
+        public int size() {
+            return this.map.size();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return this.map.isEmpty();
+        }
+
+        @Override
+        public boolean contains(final Object value) {
+            return this.map.containsValue((V)value);
+        }
+
+        @Override
+        protected List<V> asList() {
+            final List<V> ret = new ArrayList<>(this.map.size());
+
+            for (final V element : this) {
+                ret.add(element);
+            }
+
+            return ret;
+        }
+
+        @Override
+        public BaseObjectIterator<V> iterator() {
+            return this.map.valueIterator();
+        }
+    }
+#endif
+
+    protected ENTRY_SET_TYPE(K,V) entrySet;
+    public Set<TABLE_ENTRY_TYPE(K,V)> entrySet() {
+        final ENTRY_SET_TYPE(K,V) entrySet = this.entrySet;
+        if (entrySet != null) {
+            return entrySet;
+        }
+        return this.entrySet = new ENTRY_SET_NAME_DIAMONDS(this);
+    }
+
+    protected static class ENTRY_SET_TYPE(K,V) extends BaseMapSet<TABLE_ENTRY_TYPE(K,V)> {
+        protected final CLASS_TYPE(K,V) map;
+
+        protected EntrySet(final CLASS_TYPE(K,V) map) {
+            this.map = map;
+        }
+
+        @Override
+        public int size() {
+            return this.map.size();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return this.map.isEmpty();
+        }
+
+        @Override
+        public boolean contains(final Object value) {
+            if (!(value instanceof CLASS_NAME.TABLE_ENTRY_TYPE(?,?) entry)) {
+                return false;
+            }
+
+            final KEY_TYPE_RAW entryKey = entry.getKey();
+            final VALUE_TYPE_RAW entryValue = entry.getValue();
+
+#if PRIMITIVE_VALUE_TYPE == 0
+            if (entryValue == VALUE_DEFAULT_VALUE) {
+                // placeholder entry: not mapped
+                return false;
+            }
+#endif
+            return this.map.contains((KEY_TYPE)entryKey, (VALUE_TYPE)entryValue);
+        }
+
+        @Override
+        protected List<TABLE_ENTRY_TYPE(K,V)> asList() {
+            final List<TABLE_ENTRY_TYPE(K,V)> ret = new ArrayList<>(this.map.size());
+
+            for (final TABLE_ENTRY_TYPE(K,V) element : this) {
+                ret.add(element);
+            }
+
+            return ret;
+        }
+
+        @Override
+        public BaseObjectIterator<TABLE_ENTRY_TYPE(K,V)> iterator() {
+            return this.map.entryIterator();
+        }
+    }
+
+    protected static final class GENERIC_KEY_VALUE_TYPE(EntryNodeIterator,K,V) extends BaseObjectIterator<TABLE_ENTRY_TYPE(K,V)> {
+        protected TABLE_ENTRY_TYPE(K,V) lastReturned;
+        protected TABLE_ENTRY_TYPE(K,V) nextToReturn;
+        protected final NODE_ITERATOR_TYPE(K,V) nodeIterator;
+
+        protected EntryNodeIterator(final CLASS_TYPE(K,V) map) {
+            this.nodeIterator = new NODE_ITERATOR_NAME_DIAMONDS(map);
+        }
+
+        @Override
+        public boolean hasNext() {
             if (this.nextToReturn != null) {
                 return true;
             }
 
-            return (this.nextToReturn = this.findNext()) != null;
+            return (this.nextToReturn = this.nodeIterator.findNext()) != null;
         }
 
-        protected final TableEntry<V> nextNode() throws NoSuchElementException {
-            TableEntry<V> ret = this.nextToReturn;
+        @Override
+        public TABLE_ENTRY_TYPE(K,V) next() throws NoSuchElementException {
+            TABLE_ENTRY_TYPE(K,V) ret = this.nextToReturn;
             if (ret != null) {
                 this.lastReturned = ret;
                 this.nextToReturn = null;
                 return ret;
             }
-            ret = this.findNext();
+            ret = this.nodeIterator.findNext();
             if (ret != null) {
                 this.lastReturned = ret;
                 return ret;
@@ -1460,60 +1781,109 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
 
         @Override
-        public final void remove() {
-            final TableEntry<V> lastReturned = this.lastReturned;
+        public void remove() {
+            final TABLE_ENTRY_TYPE(K,V) lastReturned = this.lastReturned;
             if (lastReturned == null) {
                 throw new NoSuchElementException();
             }
             this.lastReturned = null;
-            this.map.remove(lastReturned.key);
+            this.nodeIterator.map.remove(lastReturned.key);
+        }
+    }
+
+    protected static final class GENERIC_KEY_VALUE_TYPE(KeyIterator,K,V) extends KEY_ITERATOR_BASE_TYPE(K) {
+
+        private final GENERIC_KEY_VALUE_TYPE(EntryNodeIterator,K,V) iterator;
+
+        public KeyIterator(final CLASS_TYPE(K,V) map) {
+            this.iterator = new GENERIC_KEY_VALUE_TYPE_DIAMONDS(EntryNodeIterator,K,V)(map);
         }
 
         @Override
-        public abstract T next() throws NoSuchElementException;
+        public boolean hasNext() {
+            return this.iterator.hasNext();
+        }
 
-        // overwritten by subclasses to avoid indirection on hasNext() and next()
         @Override
-        public abstract void forEachRemaining(final Consumer<? super T> action);
+        public void remove() {
+            this.iterator.remove();
+        }
+
+        @Override
+#if PRIMITIVE_KEY_TYPE != 0
+        public KEY_TYPE next##KEY_TYPE_FIRST_UPPER##() {
+#else
+        public KEY_TYPE next() {
+#endif
+            return this.iterator.next().key;
+        }
     }
 
-    protected static class NodeIterator<V> {
+    protected static final class GENERIC_KEY_VALUE_TYPE(ValueIterator,K,V) extends VALUE_ITERATOR_BASE_TYPE(V) {
 
-        protected final ConcurrentLong2ReferenceChainedHashTable<V> map;
-        protected TableEntry<V>[] currentTable;
-        protected ResizeChain<V> resizeChain;
-        protected TableEntry<V> last;
-        protected int nextBin;
-        protected int increment;
+        private final GENERIC_KEY_VALUE_TYPE(EntryNodeIterator,K,V) iterator;
 
-        protected NodeIterator(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
+        public ValueIterator(final CLASS_TYPE(K,V) map) {
+            this.iterator = new GENERIC_KEY_VALUE_TYPE_DIAMONDS(EntryNodeIterator,K,V)(map);
+        }
+
+        @Override
+        public boolean hasNext() {
+            return this.iterator.hasNext();
+        }
+
+        @Override
+        public void remove() {
+            this.iterator.remove();
+        }
+
+        @Override
+#if PRIMITIVE_VALUE_TYPE != 0
+        public VALUE_TYPE next##VALUE_TYPE_FIRST_UPPER##() {
+#else
+        public VALUE_TYPE next() {
+#endif
+            return this.iterator.next().getValueVolatile();
+        }
+    }
+
+    protected static class NODE_ITERATOR_TYPE(K,V) {
+
+        protected final CLASS_TYPE(K,V) map;
+        private TABLE_ENTRY_TYPE(K,V)[] currentTable;
+        private RESIZE_CHAIN_TYPE(K,V) resizeChain;
+        private TABLE_ENTRY_TYPE(K,V) last;
+        private int nextBin;
+        private int increment;
+
+        protected NODE_ITERATOR_NAME(final CLASS_TYPE(K,V) map) {
             this.map = map;
             this.currentTable = map.table;
             this.increment = 1;
         }
 
-        private TableEntry<V>[] pullResizeChain(final int index) {
-            final ResizeChain<V> resizeChain = this.resizeChain;
+        private TABLE_ENTRY_TYPE(K,V)[] pullResizeChain(final int index) {
+            final RESIZE_CHAIN_TYPE(K,V) resizeChain = this.resizeChain;
             if (resizeChain == null) {
                 this.currentTable = null;
                 return null;
             }
 
-            final ResizeChain<V> prevChain = resizeChain.prev;
+            final RESIZE_CHAIN_TYPE(K,V) prevChain = resizeChain.prev;
             this.resizeChain = prevChain;
             if (prevChain == null) {
                 this.currentTable = null;
                 return null;
             }
 
-            final TableEntry<V>[] newTable = prevChain.table;
+            final TABLE_ENTRY_TYPE(K,V)[] newTable = prevChain.table;
 
             // we recover the original index by modding by the new table length, as the increments applied to the index
             // are a multiple of the new table's length
             int newIdx = index & (newTable.length - 1);
 
             // the increment is always the previous table's length
-            final ResizeChain<V> nextPrevChain = prevChain.prev;
+            final RESIZE_CHAIN_TYPE(K,V) nextPrevChain = prevChain.prev;
             final int increment;
             if (nextPrevChain == null) {
                 increment = 1;
@@ -1531,14 +1901,14 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
             return newTable;
         }
 
-        private TableEntry<V>[] pushResizeChain(final TableEntry<V>[] table) {
-            final ResizeChain<V> chain = this.resizeChain;
+        private TABLE_ENTRY_TYPE(K,V)[] pushResizeChain(final TABLE_ENTRY_TYPE(K,V)[] table) {
+            final RESIZE_CHAIN_TYPE(K,V) chain = this.resizeChain;
 
             if (chain == null) {
-                final TableEntry<V>[] nextTable = this.map.fetchNewTable(table);
+                final TABLE_ENTRY_TYPE(K,V)[] nextTable = this.map.fetchNewTable(table);
 
-                final ResizeChain<V> oldChain = new ResizeChain<>(table, null, null);
-                final ResizeChain<V> currChain = new ResizeChain<>(nextTable, oldChain, null);
+                final RESIZE_CHAIN_TYPE(K,V) oldChain = new RESIZE_CHAIN_NAME_DIAMONDS(table, null, null);
+                final RESIZE_CHAIN_TYPE(K,V) currChain = new RESIZE_CHAIN_NAME_DIAMONDS(nextTable, oldChain, null);
                 oldChain.next = currChain;
 
                 this.increment = table.length;
@@ -1547,10 +1917,10 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
                 return nextTable;
             } else {
-                ResizeChain<V> currChain = chain.next;
+                RESIZE_CHAIN_TYPE(K,V) currChain = chain.next;
                 if (currChain == null) {
-                    final TableEntry<V>[] ret = this.map.fetchNewTable(table);
-                    currChain = new ResizeChain<>(ret, chain, null);
+                    final TABLE_ENTRY_TYPE(K,V)[] ret = this.map.fetchNewTable(table);
+                    currChain = new RESIZE_CHAIN_NAME_DIAMONDS(ret, chain, null);
                     chain.next = currChain;
 
                     this.increment = table.length;
@@ -1566,22 +1936,24 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
             }
         }
 
-        protected final TableEntry<V> findNext() {
+        protected final TABLE_ENTRY_TYPE(K,V) findNext() {
             for (;;) {
-                final TableEntry<V> last = this.last;
+                final TABLE_ENTRY_TYPE(K,V) last = this.last;
                 if (last != null) {
-                    final TableEntry<V> next = last.getNextVolatile();
+                    final TABLE_ENTRY_TYPE(K,V) next = last.getNextVolatile();
                     if (next != null) {
                         this.last = next;
+#if PRIMITIVE_VALUE_TYPE == 0
                         if (next.getValuePlain() == null) {
                             // compute() node not yet available
                             continue;
                         }
+#endif
                         return next;
                     }
                 }
 
-                TableEntry<V>[] table = this.currentTable;
+                TABLE_ENTRY_TYPE(K,V)[] table = this.currentTable;
 
                 if (table == null) {
                     return null;
@@ -1602,7 +1974,7 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
                         }
                     }
 
-                    final TableEntry<V> entry = getAtIndexAcquire(table, idx);
+                    final TABLE_ENTRY_TYPE(K,V) entry = getAtIndexAcquire(table, idx);
                     if (entry == null) {
                         idx += increment;
                         continue;
@@ -1617,23 +1989,24 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
 
                     this.last = entry;
                     this.nextBin = idx + increment;
-                    if (entry.getValuePlain() != null) {
-                        return entry;
-                    } else {
+#if PRIMITIVE_VALUE_TYPE == 0
+                    if (entry.getValuePlain() == null) {
                         // compute() node not yet available
                         break;
                     }
+#endif
+                    return entry;
                 }
             }
         }
 
-        protected static final class ResizeChain<V> {
+        private static final class RESIZE_CHAIN_TYPE(K,V) {
 
-            public final TableEntry<V>[] table;
-            public final ResizeChain<V> prev;
-            public ResizeChain<V> next;
+            public final TABLE_ENTRY_TYPE(K,V)[] table;
+            public final RESIZE_CHAIN_TYPE(K,V) prev;
+            public RESIZE_CHAIN_TYPE(K,V) next;
 
-            public ResizeChain(final TableEntry<V>[] table, final ResizeChain<V> prev, final ResizeChain<V> next) {
+            public RESIZE_CHAIN_NAME(final TABLE_ENTRY_TYPE(K,V)[] table, final RESIZE_CHAIN_TYPE(K,V) prev, final RESIZE_CHAIN_TYPE(K,V) next) {
                 this.table = table;
                 this.prev = prev;
                 this.next = next;
@@ -1641,207 +2014,82 @@ public class ConcurrentLong2ReferenceChainedHashTable<V> implements Iterable<Con
         }
     }
 
-    protected static abstract class BaseCollection<V, E> implements Collection<E> {
+    public static final class TABLE_ENTRY_TYPE(K,V) {
 
-        protected final ConcurrentLong2ReferenceChainedHashTable<V> map;
+        private static final VarHandle TABLE_ENTRY_ARRAY_HANDLE = ConcurrentUtil.getArrayHandle(TABLE_ENTRY_NAME[].class);
 
-        protected BaseCollection(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            this.map = map;
-        }
+        private final KEY_TYPE key;
 
-        @Override
-        public int size() {
-            return this.map.size();
-        }
+        private volatile VALUE_TYPE value;
+        private static final VarHandle VALUE_HANDLE = ConcurrentUtil.getVarHandle(TABLE_ENTRY_NAME.class, "value", Object.class);
 
-        @Override
-        public boolean isEmpty() {
-            return this.map.isEmpty();
-        }
-
-        @Override
-        public void forEach(final Consumer<? super E> action) {
-            this.iterator().forEachRemaining(action);
-        }
-
-        private List<E> asList() {
-            final List<E> ret = new ArrayList<>(this.map.size());
-
-            for (final E element : this) {
-                ret.add(element);
-            }
-
-            return ret;
-        }
-
-        @Override
-        public Object[] toArray() {
-            return this.asList().toArray();
-        }
-
-        @Override
-        public <T> T[] toArray(final T[] a) {
-            return this.asList().toArray(a);
-        }
-
-        @Override
-        public boolean containsAll(final Collection<?> collection) {
-            for (final Object value : collection) {
-                if (!this.contains(value)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        @Override
-        public boolean add(final E value) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean remove(final Object value) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean addAll(final Collection<? extends E> collection) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean removeAll(final Collection<?> collection) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean removeIf(final Predicate<? super E> filter) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean retainAll(final Collection<?> collection) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void clear() {
-            throw new UnsupportedOperationException();
-        }
-    }
-
-    protected static class Values<V> extends BaseCollection<V, V> {
-
-        public Values(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map);
-        }
-
-        @Override
-        public boolean contains(final Object value) {
-            return this.map.containsValue((V)value);
-        }
-
-        @Override
-        public Iterator<V> iterator() {
-            return this.map.valueIterator();
-        }
-    }
-
-    protected static class EntrySet<V> extends BaseCollection<V, TableEntry<V>> implements Set<TableEntry<V>> {
-
-        protected EntrySet(final ConcurrentLong2ReferenceChainedHashTable<V> map) {
-            super(map);
-        }
-
-        @Override
-        public boolean contains(final Object value) {
-            if (!(value instanceof ConcurrentLong2ReferenceChainedHashTable.TableEntry<?> entry)) {
-                return false;
-            }
-
-            final V mapped = this.map.get(entry.getKey());
-
-            return mapped != null && mapped == value;
-        }
-
-        @Override
-        public Iterator<TableEntry<V>> iterator() {
-            return this.map.entryIterator();
-        }
-    }
-
-    public static final class TableEntry<V> {
-
-        private static final VarHandle TABLE_ENTRY_ARRAY_HANDLE = ConcurrentUtil.getArrayHandle(TableEntry[].class);
-
-        private final long key;
-
-        private volatile V value;
-        private static final VarHandle VALUE_HANDLE = ConcurrentUtil.getVarHandle(TableEntry.class, "value", Object.class);
-
-        private V getValuePlain() {
+        private VALUE_TYPE getValuePlain() {
             //noinspection unchecked
-            return (V)VALUE_HANDLE.get(this);
+            return (VALUE_TYPE)VALUE_HANDLE.get(this);
         }
 
-        private V getValueAcquire() {
+        private VALUE_TYPE getValueAcquire() {
             //noinspection unchecked
-            return (V)VALUE_HANDLE.getAcquire(this);
+            return (VALUE_TYPE)VALUE_HANDLE.getAcquire(this);
         }
 
-        private V getValueVolatile() {
+        private VALUE_TYPE getValueVolatile() {
             //noinspection unchecked
-            return (V)VALUE_HANDLE.getVolatile(this);
+            return (VALUE_TYPE)VALUE_HANDLE.getVolatile(this);
         }
 
-        private void setValuePlain(final V value) {
+        private void setValuePlain(final VALUE_TYPE value) {
             VALUE_HANDLE.set(this, (Object)value);
         }
 
-        private void setValueRelease(final V value) {
+        private void setValueRelease(final VALUE_TYPE value) {
             VALUE_HANDLE.setRelease(this, (Object)value);
         }
 
-        private void setValueVolatile(final V value) {
+        private void setValueVolatile(final VALUE_TYPE value) {
             VALUE_HANDLE.setVolatile(this, (Object)value);
         }
 
-        private volatile TableEntry<V> next;
-        private static final VarHandle NEXT_HANDLE = ConcurrentUtil.getVarHandle(TableEntry.class, "next", TableEntry.class);
+        private volatile TABLE_ENTRY_TYPE(K,V) next;
+        private static final VarHandle NEXT_HANDLE = ConcurrentUtil.getVarHandle(TABLE_ENTRY_NAME.class, "next", TABLE_ENTRY_NAME.class);
 
-        private TableEntry<V> getNextPlain() {
+        private TABLE_ENTRY_TYPE(K,V) getNextPlain() {
             //noinspection unchecked
-            return (TableEntry<V>)NEXT_HANDLE.get(this);
+            return (TABLE_ENTRY_TYPE(K,V))NEXT_HANDLE.get(this);
         }
 
-        private TableEntry<V> getNextVolatile() {
+        private TABLE_ENTRY_TYPE(K,V) getNextAcquire() {
             //noinspection unchecked
-            return (TableEntry<V>)NEXT_HANDLE.getVolatile(this);
+            return (TABLE_ENTRY_TYPE(K,V))NEXT_HANDLE.getAcquire(this);
         }
 
-        private void setNextPlain(final TableEntry<V> next) {
+        private TABLE_ENTRY_TYPE(K,V) getNextVolatile() {
+            //noinspection unchecked
+            return (TABLE_ENTRY_TYPE(K,V))NEXT_HANDLE.getVolatile(this);
+        }
+
+        private void setNextPlain(final TABLE_ENTRY_TYPE(K,V) next) {
             NEXT_HANDLE.set(this, next);
         }
 
-        private void setNextRelease(final TableEntry<V> next) {
+        private void setNextRelease(final TABLE_ENTRY_TYPE(K,V) next) {
             NEXT_HANDLE.setRelease(this, next);
         }
 
-        private void setNextVolatile(final TableEntry<V> next) {
+        private void setNextVolatile(final TABLE_ENTRY_TYPE(K,V) next) {
             NEXT_HANDLE.setVolatile(this, next);
         }
 
-        public TableEntry(final long key, final V value) {
+        protected TABLE_ENTRY_NAME(final KEY_TYPE key, final VALUE_TYPE value) {
             this.key = key;
             this.setValuePlain(value);
         }
 
-        public long getKey() {
+        public KEY_TYPE getKey() {
             return this.key;
         }
 
-        public V getValue() {
+        public VALUE_TYPE getValue() {
             return this.getValueVolatile();
         }
     }

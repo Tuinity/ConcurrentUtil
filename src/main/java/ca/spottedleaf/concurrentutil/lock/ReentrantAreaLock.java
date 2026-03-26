@@ -1,7 +1,7 @@
 package ca.spottedleaf.concurrentutil.lock;
 
 import ca.spottedleaf.concurrentutil.collection.MultiThreadedQueue;
-import ca.spottedleaf.concurrentutil.map.ConcurrentLong2ReferenceChainedHashTable;
+import ca.spottedleaf.concurrentutil.map.concurrent.longs.ConcurrentChainedLong2ReferenceHashTable;
 import ca.spottedleaf.concurrentutil.util.IntPairUtil;
 import java.util.Objects;
 import java.util.concurrent.locks.LockSupport;
@@ -11,7 +11,7 @@ public final class ReentrantAreaLock {
     public final int coordinateShift;
 
     // aggressive load factor to reduce contention
-    private final ConcurrentLong2ReferenceChainedHashTable<Node> nodes = ConcurrentLong2ReferenceChainedHashTable.createWithCapacity(128, 0.2f);
+    private final ConcurrentChainedLong2ReferenceHashTable<Node> nodes = ConcurrentChainedLong2ReferenceHashTable.createWithCapacity(128, 0.2f);
 
     public ReentrantAreaLock(final int coordinateShift) {
         this.coordinateShift = coordinateShift;

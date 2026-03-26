@@ -139,14 +139,7 @@ public final class Completable<T> {
                 try {
                     ret.complete(supplier.get());
                 } catch (final Throwable throwable) {
-                    Throwable complete;
-                    try {
-                        complete = exceptionHandler.apply(throwable);
-                    } catch (final Throwable thr2) {
-                        throwable.addSuppressed(thr2);
-                        complete = throwable;
-                    }
-                    ret.completeExceptionally(complete);
+                    failed(ret, throwable, exceptionHandler);
                 }
             }
         }
@@ -154,14 +147,7 @@ public final class Completable<T> {
         try {
             executor.execute(new AsyncSuppliedCompletable());
         } catch (final Throwable throwable) {
-            Throwable complete;
-            try {
-                complete = exceptionHandler.apply(throwable);
-            } catch (final Throwable thr2) {
-                throwable.addSuppressed(thr2);
-                complete = throwable;
-            }
-            ret.completeExceptionally(complete);
+            failed(ret, throwable, exceptionHandler);
         }
 
         return ret;
@@ -489,6 +475,84 @@ public final class Completable<T> {
         return ret;
     }
 
+    public <R, O> Completable<R> thenCombine(final Completable<O> other, final BiFunction<T, O, R> combineFunction) {
+        return this.thenCombine(other, combineFunction, DEFAULT_EXCEPTION_HANDLER);
+    }
+
+    public <R, O> Completable<R> thenCombine(final Completable<O> other, final BiFunction<T, O, R> combineFunction,
+                                             final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
+        Objects.requireNonNull(other, "Other may not be null");
+        Objects.requireNonNull(combineFunction, "Combine function may not be null");
+
+        final Completable<R> ret = new Completable<>();
+
+        this.whenComplete((final T thisVal, final Throwable thr) -> {
+            if (thr != null) {
+                failed(ret, thr, exceptionHandler);
+            } else {
+                other.whenComplete((final O otherVal, final Throwable thr2) -> {
+                    if (thr2 != null) {
+                        failed(ret, thr2, exceptionHandler);
+                    } else {
+                        try {
+                            ret.complete(combineFunction.apply(thisVal, otherVal));
+                        } catch (final Throwable thr3) {
+                            failed(ret, thr3, exceptionHandler);
+                        }
+                    }
+                }, exceptionHandler);
+            }
+        }, exceptionHandler);
+
+        return ret;
+    }
+
+    public <R, O> Completable<R> thenCombineAsync(final Completable<O> other, final BiFunction<T, O, R> combineFunction,
+                                                  final Executor executor) {
+        return this.thenCombineAsync(other, combineFunction, executor, DEFAULT_EXCEPTION_HANDLER);
+    }
+
+    public <R, O> Completable<R> thenCombineAsync(final Completable<O> other, final BiFunction<T, O, R> combineFunction,
+                                                  final Executor executor,
+                                                  final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
+        Objects.requireNonNull(other, "Other may not be null");
+        Objects.requireNonNull(combineFunction, "Combine function may not be null");
+
+        final Completable<R> ret = new Completable<>();
+
+        this.whenComplete((final T thisVal, final Throwable thr) -> {
+            if (thr != null) {
+                failed(ret, thr, exceptionHandler);
+            } else {
+                other.whenCompleteAsync((final O otherVal, final Throwable thr2) -> {
+                    if (thr2 != null) {
+                        failed(ret, thr2, exceptionHandler);
+                    } else {
+                        try {
+                            ret.complete(combineFunction.apply(thisVal, otherVal));
+                        } catch (final Throwable thr3) {
+                            failed(ret, thr3, exceptionHandler);
+                        }
+                    }
+                }, executor, exceptionHandler);
+            }
+        }, exceptionHandler);
+
+        return ret;
+    }
+
+    private static <T> void failed(final Completable<T> future, final Throwable throwable,
+                                   final Function<? super Throwable, ? extends Throwable> exceptionHandler) {
+        Throwable complete;
+        try {
+            complete = exceptionHandler.apply(throwable);
+        } catch (final Throwable thr2) {
+            throwable.addSuppressed(thr2);
+            complete = throwable;
+        }
+        future.completeExceptionally(complete);
+    }
+
     private static final class ExceptionResult {
         public final Throwable ex;
 
@@ -518,15 +582,8 @@ public final class Completable<T> {
         @Override
         public abstract void run();
 
-        protected void failed(final Throwable throwable) {
-            Throwable complete;
-            try {
-                complete = this.exceptionHandler.apply(throwable);
-            } catch (final Throwable thr2) {
-                throwable.addSuppressed(thr2);
-                complete = throwable;
-            }
-            this.to.completeExceptionally(complete);
+        protected final void failed(final Throwable throwable) {
+            Completable.failed(this.to, throwable, this.exceptionHandler);
         }
 
         public void execute() {

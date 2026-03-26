@@ -1,0 +1,113 @@
+
+Directions to the pre-processor are present as follows:
+```
+#<directive> <possible values>
+```
+
+A directive is one of the following:
+- define
+- error
+- if
+- ifdef
+- ifndef
+- else
+- endif
+- include
+- comment
+
+If a line in the file specifies an invalid directive, an exception is thrown.
+
+Directions to the pre-processor may be multi-line:
+
+```
+#<directive> ...
+... \
+... \
+...
+```
+
+The \ character in a direction indicates to the pre-processor that it should
+not read any characters past the \ character.
+
+The define directive may be used to define one of two types of macros:
+1. Value
+```
+#define STR "This is a string."
+```
+2. Function
+```
+#define SUM(A,B) (A + B)
+#define MUL(A,B) (A*B)
+```
+
+Macros are discovered in non-direction lines and replaced with the evaluation of the macro.
+
+An example line:
+```
+MUL(SUM(1,2),SUM(1,0))
+```
+
+becomes
+```
+((1 + 2)*(1 + 0))
+```
+
+The ## in non-direction lines of the file indicates that concatenation should occur.
+For example:
+
+```
+This is## a string
+```
+
+becomes
+
+```
+This is a string
+```
+
+The error directive simply throws an exception when encountered.
+
+Example
+
+```
+#error Example error message
+```
+
+The following describes conditional evaluation of lines.
+The conditional evaluation directives are:
+- if
+- ifdef
+- ifndef
+
+The if directive allows conditionally evaluating lines when the condition is true
+until an else or endif directive is encountered.
+
+Condition evaluation has only two operations: == and !=, and may only be used with
+constant values or no-arg macros. Note that no-arg macros are considered to be strings,
+same with constant values. The parsing correctly handle usages of &&, ||, and ().
+
+The ifdef and ifndef take only one argument, which is a name of a defined macro and checks
+whether it is defined or not defined at the current moment of evaluation.
+
+Examples
+```
+#if VALUE == 4
+<evaluate these lines if VALUE == 4>
+#else
+<evaluate these lines if VALUE != 4>
+#endif
+```
+
+The else directive conditionally evaluates lines if a previous if/ifdef/ifndef evaluates to false:
+```
+#else <if/ifdef/ifndef> <condition>
+...
+```
+Or, it may be used to unconditionally evaluate:
+```
+#else
+```
+
+The include directive is equivalent to replacing the include directive with all lines from the specified file:
+
+The comment directive is ignored.

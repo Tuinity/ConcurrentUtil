@@ -190,6 +190,14 @@ public final class IntegerUtil {
         return (((1L << bits) - 1L) / divisor) + 1;
     }
 
+    public static long getLongMask(final int bits) {
+        return bits == 0 ? 0L : -1L >>> (Long.SIZE - bits);
+    }
+
+    public static int getIntMask(final int bits) {
+        return bits == 0 ? 0 : -1 >>> (Integer.SIZE - bits);
+    }
+
     private IntegerUtil() {
         throw new RuntimeException();
     }

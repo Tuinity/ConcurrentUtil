@@ -2,7 +2,7 @@ package ca.spottedleaf.concurrentutil.executor.queue;
 
 import ca.spottedleaf.concurrentutil.executor.PrioritisedExecutor;
 import ca.spottedleaf.concurrentutil.lock.ReentrantAreaLock;
-import ca.spottedleaf.concurrentutil.map.ConcurrentLong2ReferenceChainedHashTable;
+import ca.spottedleaf.concurrentutil.map.concurrent.longs.ConcurrentChainedLong2ReferenceHashTable;
 import ca.spottedleaf.concurrentutil.util.IntPairUtil;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import java.util.ArrayList;
@@ -23,7 +23,7 @@ public final class AreaDependentQueue {
     private final AtomicLong idGenerator = new AtomicLong();
 
     private final PrioritisedExecutor executor;
-    private final ConcurrentLong2ReferenceChainedHashTable<Position> tasks = ConcurrentLong2ReferenceChainedHashTable.createWithCapacity(1024, 0.25f);
+    private final ConcurrentChainedLong2ReferenceHashTable<Position> tasks = ConcurrentChainedLong2ReferenceHashTable.createWithCapacity(1024, 0.25f);
     // lock order: acquire this lock ("area lock") before task lock ("monitor")
     private final ReentrantAreaLock lock;
 

@@ -1,0 +1,188 @@
+#if __INPUT_TYPE_COUNT != 2
+#error Expected only 2 input types
+#endif
+#ifndef IS_REFERENCE_KEY
+#error Not defined: IS_REFERENCE_KEY
+#endif
+#ifndef IS_REFERENCE_VALUE
+#error Not defined: IS_REFERENCE_VALUE
+#endif
+
+#comment Defines        \
+KEY_TYPE                \
+KEY_TYPE_BOXED          \
+KEY_TYPE_RAW            \
+KEY_TYPE_FIRST_UPPER    \
+PRIMITIVE_KEY_TYPE      \
+NUMBER_KEY_TYPE         \
+KEY_DEFAULT_VALUE
+
+#define KEY_TYPE_RAW __INPUT_TYPE0
+#define KEY_TYPE_FIRST_UPPER __INPUT_TYPE0_FIRST_UPPER
+
+#if __INPUT_TYPE0_PRIMITIVE != 0
+
+#define KEY_TYPE __INPUT_TYPE0
+#define KEY_TYPE_BOXED __INPUT_TYPE0_BOXED
+#define PRIMITIVE_KEY_TYPE 1
+#define NUMBER_KEY_TYPE __INPUT_TYPE0_IS_NUMBER
+#if __INPUT_TYPE0_IS_NUMBER != 0
+#define KEY_DEFAULT_VALUE ((KEY_TYPE)0)
+#else
+#define KEY_DEFAULT_VALUE (false)
+#endif
+
+#else
+
+#define KEY_TYPE K
+#define KEY_TYPE_BOXED __INPUT_TYPE0
+#define PRIMITIVE_KEY_TYPE 0
+#define NUMBER_KEY_TYPE 0
+#define KEY_DEFAULT_VALUE null
+
+#endif
+
+#comment Defines        \
+VALUE_TYPE              \
+VALUE_TYPE_BOXED        \
+VALUE_TYPE_RAW          \
+VALUE_TYPE_FIRST_UPPER  \
+PRIMITIVE_VALUE_TYPE    \
+NUMBER_VALUE_TYPE       \
+VALUE_DEFAULT_VALUE
+
+#define VALUE_TYPE_RAW __INPUT_TYPE1
+#define VALUE_TYPE_FIRST_UPPER __INPUT_TYPE1_FIRST_UPPER
+
+#if __INPUT_TYPE1_PRIMITIVE != 0
+
+#define VALUE_TYPE __INPUT_TYPE1
+#define VALUE_TYPE_BOXED __INPUT_TYPE1_BOXED
+#define PRIMITIVE_VALUE_TYPE 1
+#define NUMBER_VALUE_TYPE __INPUT_TYPE1_IS_NUMBER
+#if __INPUT_TYPE1_IS_NUMBER != 0
+#define VALUE_DEFAULT_VALUE ((VALUE_TYPE)0)
+#else
+#define VALUE_DEFAULT_VALUE (false)
+#endif
+
+#else
+
+#define VALUE_TYPE V
+#define VALUE_TYPE_BOXED __INPUT_TYPE1
+#define PRIMITIVE_VALUE_TYPE 0
+#define NUMBER_VALUE_TYPE 0
+#define VALUE_DEFAULT_VALUE null
+
+#endif
+
+
+#if PRIMITIVE_KEY_TYPE == 0 && PRIMITIVE_VALUE_TYPE == 0
+
+#define GENERIC_KEY_VALUE_TYPE(N,K,V) N<K,V>
+#define GENERIC_KEY_VALUE_TYPE_DIAMONDS(N,K,V) N<>
+
+#else if PRIMITIVE_KEY_TYPE == 0 && PRIMITIVE_VALUE_TYPE != 0
+
+#define GENERIC_KEY_VALUE_TYPE(N,K,V) N<K>
+#define GENERIC_KEY_VALUE_TYPE_DIAMONDS(N,K,V) N<>
+
+#else if PRIMITIVE_KEY_TYPE != 0 && PRIMITIVE_VALUE_TYPE == 0
+
+#define GENERIC_KEY_VALUE_TYPE(N,K,V) N<V>
+#define GENERIC_KEY_VALUE_TYPE_DIAMONDS(N,K,V) N<>
+
+#else
+
+#define GENERIC_KEY_VALUE_TYPE(N,K,V) N
+#define GENERIC_KEY_VALUE_TYPE_DIAMONDS(N,K,V) N
+
+#endif
+
+
+
+#if IS_REFERENCE_KEY == 0
+
+#define __KEY_TYPE_NAME KEY_TYPE_FIRST_UPPER
+
+#else
+
+#define __KEY_TYPE_NAME Reference
+
+#endif
+
+
+
+#if IS_REFERENCE_VALUE == 0
+
+#define __VALUE_TYPE_NAME VALUE_TYPE_FIRST_UPPER
+
+#else
+
+#define __VALUE_TYPE_NAME Reference
+
+#endif
+
+
+#if IS_REFERENCE_KEY != 0
+
+#define KEY_HASH_FUNCTION(K) (HashUtil.mix(System.identityHashCode(K)))
+#define KEY_EQUALS_FUNCTION(K1,K2) (K1 == K2)
+
+#else if PRIMITIVE_KEY_TYPE != 0
+
+#if NUMBER_KEY_TYPE == 0
+#define KEY_HASH_FUNCTION(K) (K ? 1 : 0)
+#else
+#define KEY_HASH_FUNCTION(K) ((int)HashUtil.mix(K))
+#endif
+
+#define KEY_EQUALS_FUNCTION(K1,K2) (K1 == K2)
+
+#else
+#define KEY_HASH_FUNCTION(K) (HashUtil.mix(K.hashCode()))
+#define KEY_EQUALS_FUNCTION(K1,K2) (K1 == K2 || K1.equals(K2))
+#endif
+
+
+
+#if IS_REFERENCE_VALUE != 0 || PRIMITIVE_VALUE_TYPE != 0
+
+#define VALUE_EQUALS_FUNCTION(V1,V2) (V1 == V2)
+
+#else
+
+#define VALUE_EQUALS_FUNCTION(V1,V2) (V1 == V2 || V1.equals(V2))
+
+#endif
+
+#if PRIMITIVE_KEY_TYPE != 0
+#define NULL_CHECK_KEY_MSG(K,M)
+#else
+#define NULL_CHECK_KEY_MSG(K,M) Objects.requireNonNull(K,M);
+#endif
+
+#if PRIMITIVE_VALUE_TYPE != 0
+#define NULL_CHECK_VALUE_MSG(V,M)
+#else
+#define NULL_CHECK_VALUE_MSG(V,M) Objects.requireNonNull(V,M);
+#endif
+
+#define NULL_CHECK_KEY(K) NULL_CHECK_KEY_MSG(K, "Key may not be null")
+#define NULL_CHECK_VALUE(V) NULL_CHECK_VALUE_MSG(V, "Value may not be null")
+
+#define KEY_ITERATOR_BASE_NAME Base##KEY_TYPE_FIRST_UPPER##Iterator
+#define VALUE_ITERATOR_BASE_NAME Base##VALUE_TYPE_FIRST_UPPER##Iterator
+
+
+#if PRIMITIVE_KEY_TYPE != 0
+#define KEY_ITERATOR_BASE_TYPE(K) KEY_ITERATOR_BASE_NAME
+#else
+#define KEY_ITERATOR_BASE_TYPE(K) KEY_ITERATOR_BASE_NAME<K>
+#endif
+
+#if PRIMITIVE_VALUE_TYPE != 0
+#define VALUE_ITERATOR_BASE_TYPE(V) VALUE_ITERATOR_BASE_NAME
+#else
+#define VALUE_ITERATOR_BASE_TYPE(V) VALUE_ITERATOR_BASE_NAME<V>
+#endif
