@@ -5,6 +5,8 @@ import it.unimi.dsi.fastutil.ints.IntArrayList;
 
 public interface OSNuma {
 
+    public static int NUMA_DISTANCE_CANNOT_DETERMINE = 255;
+
     public static OSNuma getNativeInstance() {
         final LinuxNuma linux = LinuxNuma.INSTANCE;
         if (linux != null && linux.isAvailable()) {
@@ -164,12 +166,12 @@ public interface OSNuma {
         public int getNumaDistance(final int n1, final int n2) {
             if (n1 < 0 || n1 >= this.costArray.length) {
                 // cannot determine
-                return 0;
+                return NUMA_DISTANCE_CANNOT_DETERMINE;
             }
             final int[] distances = this.costArray[n1];
             if (n2 < 0 || n2 >= distances.length) {
                 // cannot determine
-                return 0;
+                return NUMA_DISTANCE_CANNOT_DETERMINE;
             }
             return distances[n2];
         }

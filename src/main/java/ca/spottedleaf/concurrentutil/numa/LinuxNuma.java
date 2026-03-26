@@ -3,9 +3,13 @@ package ca.spottedleaf.concurrentutil.numa;
 import com.sun.jna.*;
 import com.sun.jna.ptr.ByReference;
 import com.sun.jna.ptr.IntByReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 
 public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(LinuxNuma.class);
 
     private static final ThreadLocal<IntByReference> CURRENT_CORE_POINTER = ThreadLocal.withInitial(IntByReference::new);
     private static final boolean LIBRARIES_AVAILABLE;
@@ -19,8 +23,11 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
 
         if (!librariesOk) {
             LIBRARIES_AVAILABLE = false;
+            LOGGER.debug("Unable to link NUMA libraries for Linux NUMA");
         } else {
-            LIBRARIES_AVAILABLE = LibNuma.numa_available() >= 0;
+            final int numaAvail = LibNuma.numa_available();
+            LIBRARIES_AVAILABLE = numaAvail >= 0;
+            LOGGER.debug("libnuma numa_available: " + numaAvail);
         }
     }
     public static final LinuxNuma INSTANCE;
@@ -34,15 +41,19 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
             try {
                 if (cpuMask == null) {
                     INSTANCE = null;
+                    LOGGER.debug("Failed to create Linux NUMA CPU mapping: Failed to allocate cpu mask for libnuma");
                 } else {
                     final int totalCpus = LibNuma.numa_num_possible_cpus();
 
-                    int[] coreToNuma = new int[0];
+                    int[] coreToNuma = new int[totalCpus];
+                    Arrays.fill(coreToNuma, -1);
+                    core_to_numa_setup:
                     for (int node = 0; node < totalNumaNodes; ++node) {
                         LibNuma.numa_bitmask_clearall(cpuMask);
                         final int res = LibNuma.numa_node_to_cpus(node, cpuMask);
                         if (res != 0) {
                             // failed
+                            LOGGER.debug("Failed to create Linux NUMA CPU mapping: Failed libnuma numa_node_to_cpus(" + node + ", ...): " + res);
                             coreToNuma = null;
                             break;
                         }
@@ -53,10 +64,22 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
                                 // not set
                                 continue;
                             }
+                            if (coreToNuma[cpu] != -1) {
+                                LOGGER.debug("Failed to create Linux NUMA CPU mapping: Duplicate node mapping for core " + cpu + ": " + coreToNuma[cpu] + " and " + node);
+                                coreToNuma = null;
+                                break core_to_numa_setup;
+                            }
                             // it is set, so mark it in the core mapping
-                            if (coreToNuma.length <= cpu) {
-                                coreToNuma = Arrays.copyOf(coreToNuma, cpu + 1);
-                                coreToNuma[cpu] = node;
+                            coreToNuma[cpu] = node;
+                        }
+                    }
+                    if (coreToNuma != null) {
+                        for (int cpu = 0; cpu < coreToNuma.length; ++cpu) {
+                            final int node = coreToNuma[cpu];
+                            if (node == -1) {
+                                LOGGER.debug("Failed to create Linux NUMA CPU mapping: No node mapping for core " + cpu);
+                                coreToNuma = null;
+                                break;
                             }
                         }
                     }
@@ -66,7 +89,8 @@ public final class LinuxNuma extends OSNuma.PreCalculatedNuma {
                         for (int j = 0; j < totalNumaNodes; ++j) {
                             final int dist = LibNuma.numa_distance(i, j);
                             // distance is 0 when it cannot be determined
-                            costArray[i][j] = dist <= 0 ? 255 : dist;
+                            // distances 1-9 are reserved and have no meaning
+                            costArray[i][j] = dist < 10 ? OSNuma.NUMA_DISTANCE_CANNOT_DETERMINE : dist;
                         }
                     }
 
