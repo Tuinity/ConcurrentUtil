@@ -2021,7 +2021,7 @@ public class CLASS_TYPE(K,V) implements Iterable<CLASS_NAME.TABLE_ENTRY_TYPE(K,V
         private final KEY_TYPE key;
 
         private volatile VALUE_TYPE value;
-        private static final VarHandle VALUE_HANDLE = ConcurrentUtil.getVarHandle(TABLE_ENTRY_NAME.class, "value", Object.class);
+        private static final VarHandle VALUE_HANDLE = ConcurrentUtil.getVarHandle(TABLE_ENTRY_NAME.class, "value", VALUE_TYPE_RAW.class);
 
         private VALUE_TYPE getValuePlain() {
             //noinspection unchecked
